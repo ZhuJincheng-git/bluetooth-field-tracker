@@ -6,7 +6,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconAction, MetricTile, ScreenTitle, StatusPill } from "@/components/tracker/ui";
 import { useColors } from "@/hooks/use-colors";
-import { formatElapsed, formatHeading, formatSpeed } from "@/lib/tracker/format";
+import { formatAccuracy, formatCoordinate, formatElapsed, formatHeading, formatLocationAge, formatSpeed } from "@/lib/tracker/format";
 import { nativeTrackerService } from "@/lib/tracker/NativeTrackerService";
 import { useTracker } from "@/lib/tracker/TrackerProvider";
 
@@ -15,6 +15,8 @@ export default function ScanScreen() {
   const { state, startSession, stopSession, recordObservation, setLatestLocation, setLifecycle, setPermissions } = useTracker();
   const [now, setNow] = useState(Date.now());
   const isScanning = state.lifecycle === "scanning";
+  const locationAge = state.latestLocation ? now - state.latestLocation.capturedAt : null;
+  const hasFreshLocation = locationAge != null && locationAge <= Math.max(state.preferences.locationIntervalMs * 2, 20_000);
 
   useEffect(() => {
     if (!isScanning) return;
@@ -57,16 +59,23 @@ export default function ScanScreen() {
           <StatusPill active={isScanning} label={isScanning ? "正在采集" : "准备就绪"} />
         </View>
         <Text style={[styles.heroTitle, { color: colors.text }]}>{isScanning ? formatElapsed(state.activeSession?.startedAt ?? now, now) : "开始一次采集"}</Text>
-        <Text style={[styles.heroBody, { color: colors.tabIconDefault }]}>{isScanning ? "正在融合 BLE 广播与最新位置快照。退到后台后仍需保持系统前台服务通知。" : state.lastError ?? "开始后将先检查蓝牙、位置和通知权限，再创建本机扫描会话。"}</Text>
+        <Text style={[styles.heroBody, { color: colors.tabIconDefault }]}>{isScanning ? (hasFreshLocation ? "蓝牙与位置数据正在独立更新；坐标状态卡会显示最近一次定位时间。" : "蓝牙已开始采集，正在等待第一条位置更新。请确认系统定位服务已经开启。") : state.lastError ?? "开始后将先检查蓝牙、位置和通知权限，再创建本机扫描会话。"}</Text>
         <Pressable onPress={() => void (isScanning ? handleStop() : handleStart())} accessibilityRole="button" accessibilityLabel={isScanning ? "停止采集" : "开始采集"} style={({ pressed }) => [styles.primaryButton, { backgroundColor: isScanning ? "#C2382B" : "#006C5F" }, pressed && styles.buttonPressed]}>
           <MaterialIcons name={isScanning ? "stop-circle" : "play-circle"} size={22} color="#FFFFFF" />
           <Text style={styles.primaryButtonText}>{isScanning ? "停止采集" : "开始采集"}</Text>
         </Pressable>
       </View>
+      <View style={[styles.locationCard, { backgroundColor: colors.surface, borderColor: hasFreshLocation ? "#A4F2DF" : colors.border }]}>
+        <View style={styles.locationHeader}>
+          <View style={styles.locationLabel}><MaterialIcons name="my-location" size={19} color="#006C5F" /><Text style={[styles.locationTitle, { color: colors.text }]}>实时位置</Text></View>
+          <View style={[styles.locationLive, { backgroundColor: hasFreshLocation ? "#E1F5ED" : "#EDF0EE" }]}><View style={[styles.locationDot, { backgroundColor: hasFreshLocation ? "#006C5F" : colors.tabIconDefault }]} /><Text style={[styles.locationLiveText, { color: hasFreshLocation ? "#003731" : colors.tabIconDefault }]}>{formatLocationAge(state.latestLocation?.capturedAt ?? null, now)}</Text></View>
+        </View>
+        <Text style={[styles.coordinate, { color: state.latestLocation ? colors.text : colors.tabIconDefault }]}>{formatCoordinate(state.latestLocation)}</Text>
+        <Text style={[styles.locationMeta, { color: colors.tabIconDefault }]}>{formatAccuracy(state.latestLocation?.accuracyM ?? null)} · 每 {state.preferences.locationIntervalMs / 1000} 秒或移动 {state.preferences.locationDistanceIntervalM} m 更新</Text>
+      </View>
       <View style={styles.metrics}>
-        <MetricTile icon="location-on" label="位置" value={state.latestLocation ? "已获取" : "等待定位"} />
-        <MetricTile icon="speed" label="速度" value={formatSpeed(state.latestLocation?.speedMps ?? null)} />
-        <MetricTile icon="explore" label="航向" value={formatHeading(state.latestLocation?.headingDegrees ?? null)} />
+        <MetricTile icon="speed" label="步行速度" value={formatSpeed(state.latestLocation?.speedMps ?? null)} />
+        <MetricTile icon="explore" label="移动方向" value={formatHeading(state.latestLocation?.headingDegrees ?? null)} />
       </View>
       <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>最近发现</Text><Pressable onPress={() => router.push("/(tabs)/devices" as never)} style={({ pressed }) => pressed && styles.buttonPressed}><Text style={styles.allLink}>查看全部</Text></Pressable></View>
       {state.devices.length ? (
@@ -92,7 +101,16 @@ const styles = StyleSheet.create({
   primaryButton: { alignItems: "center", borderRadius: 999, flexDirection: "row", gap: 9, justifyContent: "center", marginTop: 6, minHeight: 52 },
   primaryButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
   buttonPressed: { opacity: 0.75, transform: [{ scale: 0.98 }] },
-  metrics: { flexDirection: "row", gap: 8, marginTop: 16 },
+  locationCard: { borderRadius: 18, borderWidth: 1, gap: 8, marginTop: 16, padding: 15 },
+  locationHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  locationLabel: { alignItems: "center", flexDirection: "row", gap: 7 },
+  locationTitle: { fontSize: 15, fontWeight: "700" },
+  locationLive: { alignItems: "center", borderRadius: 999, flexDirection: "row", gap: 6, paddingHorizontal: 9, paddingVertical: 5 },
+  locationDot: { borderRadius: 4, height: 7, width: 7 },
+  locationLiveText: { fontSize: 11, fontWeight: "700" },
+  coordinate: { fontSize: 22, fontVariant: ["tabular-nums"], fontWeight: "700", letterSpacing: -0.2, lineHeight: 28 },
+  locationMeta: { fontSize: 12, lineHeight: 18 },
+  metrics: { flexDirection: "row", gap: 8, marginTop: 8 },
   sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 10, marginTop: 24 },
   sectionTitle: { fontSize: 17, fontWeight: "700" },
   allLink: { color: "#006C5F", fontSize: 14, fontWeight: "700", padding: 6 },

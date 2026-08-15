@@ -15,7 +15,20 @@ export function formatCoordinate(location: LocationSnapshot | null): string {
 
 export function formatSpeed(speedMps: number | null): string {
   if (speedMps == null || speedMps < 0) return "—";
-  return `${(speedMps * 3.6).toFixed(1)} km/h`;
+  return `${speedMps.toFixed(1)} m/s`;
+}
+
+export function formatLocationAge(capturedAt: number | null, now: number): string {
+  if (capturedAt == null) return "等待首个定位";
+  const ageSeconds = Math.max(0, Math.floor((now - capturedAt) / 1_000));
+  if (ageSeconds < 2) return "刚刚更新";
+  if (ageSeconds < 60) return `${ageSeconds} 秒前更新`;
+  return `${Math.floor(ageSeconds / 60)} 分钟前更新`;
+}
+
+export function formatAccuracy(accuracyM: number | null): string {
+  if (accuracyM == null) return "精度未知";
+  return `精度 ±${Math.round(accuracyM)} m`;
 }
 
 export function formatHeading(heading: number | null): string {
