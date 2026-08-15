@@ -28,11 +28,11 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "蓝牙现场追踪",
+  appName: "Aether",
   appSlug: "bluetooth-field-tracker",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "/manus-storage/bluetooth-field-tracker-icon_c34e7afc.png",
+  logoUrl: "/manus-storage/aether-app-icon_0ccb3420.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
