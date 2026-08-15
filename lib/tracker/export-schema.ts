@@ -17,3 +17,7 @@ export function createTrackerExport(sessions: ScanSession[], observations: Devic
     observations,
   };
 }
+
+export function createSessionExport(session: ScanSession, observations: DeviceObservation[]): TrackerExport {
+  return createTrackerExport([session], observations.filter((observation) => observation.sessionId === session.id));
+}

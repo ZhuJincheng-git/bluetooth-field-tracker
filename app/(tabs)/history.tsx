@@ -4,7 +4,7 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native
 import { ScreenContainer } from "@/components/screen-container";
 import { IconAction, ScreenTitle } from "@/components/tracker/ui";
 import { useColors } from "@/hooks/use-colors";
-import { exportTrackerData } from "@/lib/tracker/exporter";
+import { exportSessionData } from "@/lib/tracker/exporter";
 import { useTracker } from "@/lib/tracker/TrackerProvider";
 import type { ScanSession } from "@/lib/tracker/types";
 
@@ -14,38 +14,44 @@ function formatDate(timestamp: number): string {
 
 export default function HistoryScreen() {
   const colors = useColors();
-  const { state, clearHistory } = useTracker();
+  const { state, clearHistory, deleteSession } = useTracker();
   const handleClear = () => {
     Alert.alert("清除本地历史？", "此操作会清除本机保存的所有扫描会话与观测记录，且无法恢复。", [
       { text: "取消", style: "cancel" },
       { text: "清除", style: "destructive", onPress: () => void clearHistory() },
     ]);
   };
-  const handleExport = async () => {
-    if (!state.observations.length) {
-      Alert.alert("暂无可导出数据", "请先完成至少一次带有设备观测的采集。");
-      return;
-    }
+  const handleExport = async (session: ScanSession) => {
+    const observations = state.observations.filter((observation) => observation.sessionId === session.id);
     try {
-      const result = await exportTrackerData(state.sessions, state.observations);
-      Alert.alert("JSON 已创建", `已准备 ${result.fileName}，请在系统面板中选择保存或分享位置。`);
+      const result = await exportSessionData(session, observations);
+      Alert.alert("本次扫描 JSON 已创建", `此文件仅包含该次扫描会话和 ${observations.length} 条观测。请在系统面板中选择保存或分享位置。`);
     } catch (error) {
       Alert.alert("导出未完成", error instanceof Error ? error.message : "无法创建导出文件。");
     }
+  };
+  const handleDelete = (session: ScanSession) => {
+    if (!session.stoppedAt) {
+      Alert.alert("正在采集", "请先停止当前扫描，再删除这条扫描记录。");
+      return;
+    }
+    Alert.alert("删除本次扫描？", "将只删除该会话及其设备观测，其他扫描记录不会受影响。", [
+      { text: "取消", style: "cancel" },
+      { text: "删除", style: "destructive", onPress: () => deleteSession(session.id) },
+    ]);
   };
 
   return (
     <ScreenContainer className="px-5" safeAreaClassName="pt-3">
       <View style={styles.headerActions}>
-        <View style={styles.headerCopy}><ScreenTitle title="历史" subtitle={`${state.sessions.length} 个会话 · ${state.observations.length} 条观测`} /></View>
-        <IconAction icon="ios-share" label="导出 JSON" onPress={() => void handleExport()} />
-        <IconAction icon="delete-outline" label="清除本地历史" onPress={handleClear} />
+        <View style={styles.headerCopy}><ScreenTitle title="扫描历史" subtitle={`${state.sessions.length} 次扫描 · ${state.observations.length} 条观测`} /></View>
+        <IconAction icon="delete-outline" label="清空全部扫描记录" onPress={handleClear} />
       </View>
       <FlatList
         data={state.sessions}
         keyExtractor={(item) => item.id}
         contentContainerStyle={state.sessions.length ? styles.list : styles.emptyList}
-        renderItem={({ item }) => <SessionCard session={item} />}
+        renderItem={({ item }) => <SessionCard session={item} onExport={() => void handleExport(item)} onDelete={() => handleDelete(item)} />}
         ListEmptyComponent={
           <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <MaterialIcons name="history" size={38} color="#006C5F" />
@@ -58,7 +64,7 @@ export default function HistoryScreen() {
   );
 }
 
-function SessionCard({ session }: { session: ScanSession }) {
+function SessionCard({ session, onExport, onDelete }: { session: ScanSession; onExport: () => void; onDelete: () => void }) {
   const colors = useColors();
   const durationMs = (session.stoppedAt ?? Date.now()) - session.startedAt;
   const minutes = Math.max(1, Math.round(durationMs / 60_000));
@@ -74,6 +80,18 @@ function SessionCard({ session }: { session: ScanSession }) {
       <View style={styles.cardMetrics}>
         <Text style={[styles.metricText, { color: colors.tabIconDefault }]}>{session.observationCount} 条观测</Text>
         <Text style={[styles.metricText, { color: colors.tabIconDefault }]}>{session.backgroundTrackingRequested ? "已请求后台采集" : "仅前台采集"}</Text>
+      </View>
+      <View style={styles.cardActions}>
+        <Pressable accessibilityRole="button" accessibilityLabel="导出本次扫描 JSON" onPress={onExport} style={({ pressed }) => [styles.exportButton, pressed && styles.pressed]}>
+          <MaterialIcons name="ios-share" size={18} color="#006C5F" />
+          <Text style={styles.exportText}>导出本次 JSON</Text>
+        </Pressable>
+        {session.stoppedAt ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="删除本次扫描" onPress={onDelete} style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}>
+            <MaterialIcons name="delete-outline" size={18} color="#B3261E" />
+            <Text style={styles.deleteText}>删除</Text>
+          </Pressable>
+        ) : <Text style={[styles.activeHint, { color: colors.tabIconDefault }]}>结束后可删除</Text>}
       </View>
     </View>
   );
@@ -95,4 +113,11 @@ const styles = StyleSheet.create({
   cardSubtitle: { fontSize: 13 },
   cardMetrics: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", gap: 16, paddingTop: 12 },
   metricText: { fontSize: 12 },
+  cardActions: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  exportButton: { alignItems: "center", backgroundColor: "#E1F5ED", borderRadius: 999, flexDirection: "row", gap: 6, minHeight: 38, paddingHorizontal: 13 },
+  exportText: { color: "#006C5F", fontSize: 13, fontWeight: "700" },
+  deleteButton: { alignItems: "center", borderRadius: 999, flexDirection: "row", gap: 5, minHeight: 38, paddingHorizontal: 8 },
+  deleteText: { color: "#B3261E", fontSize: 13, fontWeight: "700" },
+  activeHint: { fontSize: 12 },
+  pressed: { opacity: 0.65, transform: [{ scale: 0.98 }] },
 });

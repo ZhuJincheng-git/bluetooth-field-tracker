@@ -33,6 +33,7 @@ type TrackerAction =
   | { type: "setLocation"; location: LocationSnapshot | null }
   | { type: "recordObservation"; observation: DeviceObservation; devices: TrackedDeviceSummary[] }
   | { type: "setPreferences"; preferences: TrackerPreferences }
+  | { type: "deleteSession"; sessionId: string }
   | { type: "clear" };
 
 const INITIAL_PERMISSIONS: PermissionStatus = {
@@ -123,6 +124,11 @@ function reducer(state: TrackerState, action: TrackerAction): TrackerState {
     }
     case "setPreferences":
       return { ...state, preferences: action.preferences };
+    case "deleteSession": {
+      const sessions = state.sessions.filter((session) => session.id !== action.sessionId);
+      const observations = state.observations.filter((observation) => observation.sessionId !== action.sessionId);
+      return { ...state, sessions, observations, devices: summarizeDevices(observations) };
+    }
     case "clear":
       return { ...initialState, hydrated: true };
   }
@@ -141,6 +147,7 @@ interface TrackerContextValue {
   setLatestLocation: (location: LocationSnapshot | null) => void;
   recordObservation: (observation: Omit<DeviceObservation, "id" | "sessionId">) => void;
   setPreferences: (preferences: TrackerPreferences) => void;
+  deleteSession: (sessionId: string) => void;
   clearHistory: () => Promise<void>;
 }
 
@@ -217,6 +224,11 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
       setLatestLocation: (location) => dispatch({ type: "setLocation", location }),
       recordObservation,
       setPreferences: (preferences) => dispatch({ type: "setPreferences", preferences }),
+      deleteSession: (sessionId) => {
+        if (activeSessionRef.current?.id === sessionId) return;
+        observationsRef.current = observationsRef.current.filter((observation) => observation.sessionId !== sessionId);
+        dispatch({ type: "deleteSession", sessionId });
+      },
       clearHistory: async () => {
         await clearTrackerState();
         activeSessionRef.current = null;

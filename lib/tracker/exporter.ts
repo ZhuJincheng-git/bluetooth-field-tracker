@@ -2,14 +2,12 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
 
-import { createTrackerExport } from "@/lib/tracker/export-schema";
+import { createSessionExport, createTrackerExport } from "@/lib/tracker/export-schema";
 import type { DeviceObservation, ScanSession } from "@/lib/tracker/types";
 
 export { createTrackerExport } from "@/lib/tracker/export-schema";
 
-export async function exportTrackerData(sessions: ScanSession[], observations: DeviceObservation[]): Promise<{ fileName: string; uri: string }> {
-  const payload = createTrackerExport(sessions, observations);
-  const fileName = `bluetooth-field-tracker-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+async function shareExport(payload: ReturnType<typeof createTrackerExport>, fileName: string): Promise<{ fileName: string; uri: string }> {
   const serialized = JSON.stringify(payload, null, 2);
 
   if (Platform.OS === "web") {
@@ -26,4 +24,16 @@ export async function exportTrackerData(sessions: ScanSession[], observations: D
   }
   await Sharing.shareAsync(uri, { dialogTitle: "导出扫描记录", mimeType: "application/json" });
   return { fileName, uri };
+}
+
+export async function exportTrackerData(sessions: ScanSession[], observations: DeviceObservation[]): Promise<{ fileName: string; uri: string }> {
+  const payload = createTrackerExport(sessions, observations);
+  const fileName = `bluetooth-field-tracker-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  return shareExport(payload, fileName);
+}
+
+export async function exportSessionData(session: ScanSession, observations: DeviceObservation[]): Promise<{ fileName: string; uri: string }> {
+  const payload = createSessionExport(session, observations);
+  const fileName = `bluetooth-scan-${new Date(session.startedAt).toISOString().replace(/[:.]/g, "-")}.json`;
+  return shareExport(payload, fileName);
 }
