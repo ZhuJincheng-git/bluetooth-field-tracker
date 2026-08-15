@@ -18,6 +18,12 @@ export function formatSpeed(speedMps: number | null): string {
   return `${speedMps.toFixed(1)} m/s`;
 }
 
+export function formatSpeedSource(source: LocationSnapshot["speedSource"]): string {
+  if (source === "gps") return "系统 GPS 速度";
+  if (source === "coordinate") return "坐标位移补全";
+  return "等待定位速度";
+}
+
 export function formatLocationAge(capturedAt: number | null, now: number): string {
   if (capturedAt == null) return "等待首个定位";
   const ageSeconds = Math.max(0, Math.floor((now - capturedAt) / 1_000));

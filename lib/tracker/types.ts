@@ -13,12 +13,16 @@ export type ConfidenceLevel = "low" | "medium" | "high";
 
 export type DistanceBand = "near" | "medium" | "far" | "unknown";
 
+export type SpeedSource = "gps" | "coordinate" | "unknown";
+
 export interface LocationSnapshot {
   latitude: number;
   longitude: number;
   accuracyM: number | null;
   altitudeM: number | null;
   speedMps: number | null;
+  /** GPS 系统速度，或由相邻有效坐标与时间差补全的速度。 */
+  speedSource?: SpeedSource;
   headingDegrees: number | null;
   capturedAt: number;
 }

@@ -12,6 +12,7 @@ function toSnapshot(location: Location.LocationObject): LocationSnapshot {
     accuracyM: location.coords.accuracy,
     altitudeM: location.coords.altitude,
     speedMps: location.coords.speed,
+    speedSource: location.coords.speed != null ? "gps" : "unknown",
     headingDegrees: location.coords.heading,
     capturedAt: location.timestamp,
   };

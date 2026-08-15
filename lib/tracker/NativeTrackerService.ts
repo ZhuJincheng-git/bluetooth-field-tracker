@@ -111,14 +111,17 @@ export class NativeTrackerService {
       const updateLocation = (location: Location.LocationObject) => {
         const next = toSnapshot(location);
         const previous = this.latestLocation;
-        if ((next.headingDegrees == null || next.headingDegrees < 0) && previous) {
+        if (previous) {
           const elapsedSeconds = Math.max(0.001, (next.capturedAt - previous.capturedAt) / 1_000);
           const latitudeDelta = (next.latitude - previous.latitude) * 111_320;
           const longitudeDelta = (next.longitude - previous.longitude) * 111_320 * Math.cos((next.latitude * Math.PI) / 180);
           const distance = Math.hypot(latitudeDelta, longitudeDelta);
           if (distance >= 1) {
             const inferredHeading = (Math.atan2(longitudeDelta, latitudeDelta) * 180) / Math.PI;
-            if (next.speedMps == null || next.speedMps <= 0) next.speedMps = distance / elapsedSeconds;
+            if (next.speedMps == null || next.speedMps <= 0) {
+              next.speedMps = distance / elapsedSeconds;
+              next.speedSource = "coordinate";
+            }
             if (next.headingDegrees == null || next.headingDegrees < 0 || (next.headingDegrees === 0 && inferredHeading > 5)) {
               next.headingDegrees = inferredHeading < 0 ? inferredHeading + 360 : inferredHeading;
             }

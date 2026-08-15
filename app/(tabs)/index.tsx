@@ -1,12 +1,12 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconAction, MetricTile, ScreenTitle, StatusPill } from "@/components/tracker/ui";
 import { useColors } from "@/hooks/use-colors";
-import { formatAccuracy, formatCoordinate, formatElapsed, formatHeading, formatLocationAge, formatSpeed } from "@/lib/tracker/format";
+import { formatAccuracy, formatCoordinate, formatElapsed, formatHeading, formatLocationAge, formatSpeed, formatSpeedSource } from "@/lib/tracker/format";
 import { nativeTrackerService } from "@/lib/tracker/NativeTrackerService";
 import { useTracker } from "@/lib/tracker/TrackerProvider";
 
@@ -52,7 +52,8 @@ export default function ScanScreen() {
 
   return (
     <ScreenContainer className="px-5" safeAreaClassName="pt-3">
-      <ScreenTitle title="采集" subtitle="周边 BLE 与运动状态" action={<IconAction icon="settings" label="打开扫描设置" onPress={() => router.push("/settings" as never)} />} />
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScreenTitle title="采集" subtitle="周边 BLE 与运动状态" action={<IconAction icon="settings" label="打开扫描设置" onPress={() => router.push("/settings" as never)} />} />
       <View style={[styles.hero, { backgroundColor: isScanning ? "#E1F5ED" : colors.surface, borderColor: isScanning ? "#A4F2DF" : colors.border }]}>
         <View style={styles.heroTop}>
           <View style={[styles.radar, { backgroundColor: isScanning ? "#A4F2DF" : "#EDF0EE" }]}><MaterialIcons name="radar" size={34} color="#006C5F" /></View>
@@ -74,10 +75,11 @@ export default function ScanScreen() {
         <Text style={[styles.locationMeta, { color: colors.tabIconDefault }]}>{formatAccuracy(state.latestLocation?.accuracyM ?? null)} · 每 {state.preferences.locationIntervalMs / 1000} 秒或移动 {state.preferences.locationDistanceIntervalM} m 更新</Text>
       </View>
       <View style={styles.metrics}>
-        <MetricTile icon="speed" label="步行速度" value={formatSpeed(state.latestLocation?.speedMps ?? null)} />
+        <MetricTile icon="speed" label="移动速度" value={formatSpeed(state.latestLocation?.speedMps ?? null)} />
         <MetricTile icon="explore" label="手机朝向" value={formatHeading(state.latestMotion?.phoneHeadingDegrees ?? null)} />
       </View>
-      <Text style={[styles.motionHint, { color: colors.tabIconDefault }]}>行进航向：{formatHeading(state.latestLocation?.headingDegrees ?? null)} · 传感器：{state.latestMotion?.headingSource === "magnetometer" ? "罗盘" : state.latestMotion?.headingSource === "location" ? "定位航向" : "等待"} · 运动强度：{state.latestMotion?.movementIntensityMps2 == null ? "等待" : `${state.latestMotion.movementIntensityMps2.toFixed(1)} m/s²`}</Text>
+      <Text style={[styles.speedSourceHint, { color: colors.tabIconDefault }]}>移动速度来源：{formatSpeedSource(state.latestLocation?.speedSource)}。优先使用系统 GPS；GPS 未给出有效速度且坐标移动至少 1 m 时，以位移/时间补全。</Text>
+      <Text style={[styles.motionHint, { color: colors.tabIconDefault }]}>行进航向：{formatHeading(state.latestLocation?.headingDegrees ?? null)} · 朝向传感器：{state.latestMotion?.headingSource === "magnetometer" ? "罗盘" : state.latestMotion?.headingSource === "location" ? "定位航向" : "等待"} · 运动强度：{state.latestMotion?.movementIntensityMps2 == null ? "等待" : `${state.latestMotion.movementIntensityMps2.toFixed(1)} m/s²`}（运动强度不是速度）</Text>
       <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>最近发现</Text><Pressable onPress={() => router.push("/(tabs)/devices" as never)} style={({ pressed }) => pressed && styles.buttonPressed}><Text style={styles.allLink}>查看全部</Text></Pressable></View>
       {state.devices.length ? (
         <View style={[styles.latestDevice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -89,11 +91,13 @@ export default function ScanScreen() {
         <View style={[styles.emptyNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}><MaterialIcons name="sensors" size={20} color="#006C5F" /><Text style={[styles.emptyText, { color: colors.tabIconDefault }]}>尚未写入设备观测。开始采集后，符合条件的 BLE 广播会显示在这里。</Text></View>
       )}
       <View style={[styles.privacy, { borderColor: colors.border }]}><MaterialIcons name="privacy-tip" size={18} color={colors.tabIconDefault} /><Text style={[styles.privacyText, { color: colors.tabIconDefault }]}>采集数据默认仅保存在本机。RSSI 方位仅作估算提示，不表示精确定位。</Text></View>
+      </ScrollView>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  scrollContent: { paddingBottom: 32 },
   hero: { borderRadius: 24, borderWidth: 1, gap: 12, padding: 20 },
   heroTop: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   radar: { alignItems: "center", borderRadius: 18, height: 56, justifyContent: "center", width: 56 },
@@ -112,6 +116,7 @@ const styles = StyleSheet.create({
   coordinate: { fontSize: 22, fontVariant: ["tabular-nums"], fontWeight: "700", letterSpacing: -0.2, lineHeight: 28 },
   locationMeta: { fontSize: 12, lineHeight: 18 },
   metrics: { flexDirection: "row", gap: 8, marginTop: 8 },
+  speedSourceHint: { fontSize: 12, lineHeight: 18, marginTop: 8, paddingHorizontal: 3 },
   motionHint: { fontSize: 12, lineHeight: 18, marginTop: 7, paddingHorizontal: 3 },
   sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 10, marginTop: 24 },
   sectionTitle: { fontSize: 17, fontWeight: "700" },
