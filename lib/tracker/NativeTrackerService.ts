@@ -55,7 +55,16 @@ export class NativeTrackerService {
   private motionSubscription: { remove: () => void } | null = null;
   private magnetometerSubscription: { remove: () => void } | null = null;
   private lastRecordedAtByDevice = new Map<string, number>();
+  private activePreferences: TrackerPreferences | null = null;
   private isScanning = false;
+
+  /**
+   * 仅更新无需重建 Android 订阅的运行时选项。
+   * 定位模式、刷新频率与后台服务需要在下一次扫描启动时重新创建原生订阅。
+   */
+  updatePreferences(preferences: TrackerPreferences): void {
+    this.activePreferences = preferences;
+  }
 
   async requestRequiredPermissions(requestBackgroundTracking: boolean): Promise<PermissionStatus> {
     if (Platform.OS !== "android") {
@@ -97,6 +106,7 @@ export class NativeTrackerService {
       throw new Error("BLE 连续扫描仅支持 Android 开发构建或发布构建。浏览器预览不具备蓝牙扫描能力。");
     }
     if (this.isScanning) return;
+    this.activePreferences = preferences;
 
     try {
       if (preferences.requestBackgroundTracking) {
@@ -116,7 +126,7 @@ export class NativeTrackerService {
       const updateLocation = (location: Location.LocationObject) => {
         const next = toSnapshot(location);
         const previous = this.latestLocation;
-        const quality = assessLocationQuality(previous, next, preferences.maxLocationAccuracyM);
+        const quality = assessLocationQuality(previous, next, (this.activePreferences ?? preferences).maxLocationAccuracyM);
         if (quality !== "stable") {
           callbacks.onLocationQuality(quality);
           return;
@@ -220,10 +230,11 @@ export class NativeTrackerService {
           return;
         }
         if (!device || !this.isScanning) return;
-        if (preferences.onlyNamedDevices && !device.name && !device.localName) return;
-        if (device.rssi != null && device.rssi < preferences.minimumRssiDbm) return;
+        const runtimePreferences = this.activePreferences ?? preferences;
+        if (runtimePreferences.onlyNamedDevices && !device.name && !device.localName) return;
+        if (device.rssi != null && device.rssi < runtimePreferences.minimumRssiDbm) return;
         const previous = this.lastRecordedAtByDevice.get(device.id) ?? 0;
-        if (Date.now() - previous < preferences.observationThrottleMs) return;
+        if (Date.now() - previous < runtimePreferences.observationThrottleMs) return;
         this.lastRecordedAtByDevice.set(device.id, Date.now());
         callbacks.onObservation({
           device: toIdentity(device),
@@ -255,6 +266,7 @@ export class NativeTrackerService {
     this.magnetometerSubscription?.remove();
     this.magnetometerSubscription = null;
     this.latestMotion = null;
+    this.activePreferences = null;
 
     if (Platform.OS === "android") {
       const locationUpdatesRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);

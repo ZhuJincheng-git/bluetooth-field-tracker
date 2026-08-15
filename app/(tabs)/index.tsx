@@ -25,6 +25,10 @@ export default function ScanScreen() {
     return () => clearInterval(interval);
   }, [isScanning]);
 
+  useEffect(() => {
+    if (isScanning) nativeTrackerService.updatePreferences(state.preferences);
+  }, [isScanning, state.preferences]);
+
   const handleStart = async () => {
     setLifecycle("starting");
     try {

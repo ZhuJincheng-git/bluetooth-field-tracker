@@ -1,7 +1,7 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { router } from "expo-router";
 import { useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconAction, ScreenTitle } from "@/components/tracker/ui";
@@ -18,7 +18,6 @@ export default function HistoryScreen() {
   const colors = useColors();
   const { state, clearHistory, deleteSession } = useTracker();
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
   const handleExport = async (session: ScanSession) => {
     const observations = state.observations.filter((observation) => observation.sessionId === session.id);
@@ -36,20 +35,25 @@ export default function HistoryScreen() {
     }
     setPendingDeleteSessionId(session.id);
   };
+  const handleClearAll = () => {
+    Alert.alert("清空全部扫描记录？", "将永久删除本机保存的所有扫描会话与观测，且无法恢复。", [
+      { text: "取消", style: "cancel" },
+      { text: "清空全部", style: "destructive", onPress: () => { setFeedback(null); void clearHistory(); } },
+    ]);
+  };
 
   return (
     <ScreenContainer className="px-5" safeAreaClassName="pt-3">
       <View style={styles.headerActions}>
         <View style={styles.headerCopy}><ScreenTitle title="扫描历史" subtitle={`${state.sessions.length} 次扫描 · ${state.observations.length} 条观测`} /></View>
-        <IconAction icon="delete-outline" label="清空全部扫描记录" onPress={() => setConfirmClear(true)} />
+        <IconAction icon="delete-outline" label="清空全部扫描记录" onPress={handleClearAll} />
       </View>
       {feedback ? <View style={[styles.feedback, { backgroundColor: "#E1F5ED" }]}><MaterialIcons name="info-outline" size={18} color="#006C5F" /><Text style={styles.feedbackText}>{feedback}</Text><Pressable onPress={() => setFeedback(null)} style={styles.feedbackClose}><MaterialIcons name="close" size={18} color="#006C5F" /></Pressable></View> : null}
-      {confirmClear ? <View style={[styles.confirmStrip, { backgroundColor: "#FFF8F6", borderColor: "#F2B8B5" }]}><Text style={styles.confirmText}>清空会删除所有扫描会话，无法恢复。</Text><Pressable onPress={() => setConfirmClear(false)}><Text style={styles.cancelText}>取消</Text></Pressable><Pressable onPress={() => { void clearHistory(); setConfirmClear(false); }}><Text style={styles.confirmDeleteText}>确认清空</Text></Pressable></View> : null}
       <FlatList
         data={state.sessions}
         keyExtractor={(item) => item.id}
         contentContainerStyle={state.sessions.length ? styles.list : styles.emptyList}
-        renderItem={({ item }) => <SessionCard session={item} isPendingDelete={pendingDeleteSessionId === item.id} onOpen={() => router.push({ pathname: "/session/[id]" as never, params: { id: item.id } } as never)} onExport={() => void handleExport(item)} onDelete={() => handleDelete(item)} onCancelDelete={() => setPendingDeleteSessionId(null)} onConfirmDelete={() => { deleteSession(item.id); setPendingDeleteSessionId(null); setFeedback("已删除该次扫描及其观测。 "); }} />}
+        renderItem={({ item }) => <SessionCard session={item} isPendingDelete={pendingDeleteSessionId === item.id} onOpen={() => router.push({ pathname: "/session/[id]" as never, params: { id: item.id } } as never)} onExport={() => void handleExport(item)} onDelete={() => handleDelete(item)} onCancelDelete={() => setPendingDeleteSessionId(null)} onConfirmDelete={() => { deleteSession(item.id); setPendingDeleteSessionId(null); }} />}
         ListEmptyComponent={
           <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <MaterialIcons name="history" size={38} color="#006C5F" />
@@ -119,8 +123,6 @@ const styles = StyleSheet.create({
   feedback: { alignItems: "center", borderRadius: 14, flexDirection: "row", gap: 8, marginBottom: 10, paddingHorizontal: 12, paddingVertical: 10 },
   feedbackText: { color: "#003731", flex: 1, fontSize: 12, lineHeight: 17 },
   feedbackClose: { padding: 2 },
-  confirmStrip: { alignItems: "center", borderRadius: 14, borderWidth: 1, flexDirection: "row", gap: 10, marginBottom: 10, paddingHorizontal: 12, paddingVertical: 10 },
-  confirmText: { color: "#5F2120", flex: 1, fontSize: 12, lineHeight: 17 },
   exportButton: { alignItems: "center", backgroundColor: "#E1F5ED", borderRadius: 999, flexDirection: "row", gap: 6, minHeight: 38, paddingHorizontal: 13 },
   exportText: { color: "#006C5F", fontSize: 13, fontWeight: "700" },
   deleteButton: { alignItems: "center", borderRadius: 999, flexDirection: "row", gap: 5, minHeight: 38, paddingHorizontal: 8 },

@@ -25,6 +25,7 @@ export default function SettingsScreen() {
     <ScreenContainer className="px-5" safeAreaClassName="pt-3">
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <ScreenTitle title="采集设置" subtitle="修改后将在下一次扫描开始时生效" action={<IconAction icon="close" label="关闭设置" onPress={() => router.back()} />} />
+        {state.lifecycle === "scanning" ? <View style={styles.activeBanner}><MaterialIcons name="sync" size={19} color="#234E8A" /><Text style={styles.activeBannerText}>扫描正在进行：最低 RSSI、命名设备过滤、记录上限和显示诊断会立即生效；定位模式、更新频率、后台采集将在下一次扫描开始时生效。</Text></View> : null}
         <Section title="运行方式">
           <SettingRow icon="notifications-active" title="尝试后台采集" description="通过持续通知在后台维持蓝牙和位置记录。" control={<Switch value={state.preferences.requestBackgroundTracking} onValueChange={(value) => update({ requestBackgroundTracking: value })} trackColor={{ false: colors.border, true: "#006C5F" }} />} />
         </Section>
@@ -82,5 +83,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, fontWeight: "700" },
   notice: { alignItems: "flex-start", backgroundColor: "#E9F2FF", borderRadius: 18, flexDirection: "row", gap: 10, padding: 15 },
   noticeText: { color: "#234E8A", flex: 1, fontSize: 13, lineHeight: 19 },
+  activeBanner: { alignItems: "flex-start", backgroundColor: "#E9F2FF", borderRadius: 16, flexDirection: "row", gap: 9, padding: 14 },
+  activeBannerText: { color: "#234E8A", flex: 1, fontSize: 12, lineHeight: 18 },
   pressed: { opacity: 0.68, transform: [{ scale: 0.98 }] },
 });
