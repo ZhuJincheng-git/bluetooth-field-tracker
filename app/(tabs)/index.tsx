@@ -12,7 +12,7 @@ import { useTracker } from "@/lib/tracker/TrackerProvider";
 
 export default function ScanScreen() {
   const colors = useColors();
-  const { state, startSession, stopSession, recordObservation, setLatestLocation, setLifecycle, setPermissions } = useTracker();
+  const { state, startSession, stopSession, recordObservation, setLatestLocation, setLatestMotion, setLifecycle, setPermissions } = useTracker();
   const [now, setNow] = useState(Date.now());
   const isScanning = state.lifecycle === "scanning";
   const locationAge = state.latestLocation ? now - state.latestLocation.capturedAt : null;
@@ -36,7 +36,7 @@ export default function ScanScreen() {
         throw new Error("后台采集需要“始终允许”位置权限。请在系统设置完成授权，或在设置中关闭后台采集后重试。");
       }
       startSession();
-      await nativeTrackerService.start(state.preferences, { onLocation: setLatestLocation, onObservation: recordObservation });
+      await nativeTrackerService.start(state.preferences, { onLocation: setLatestLocation, onMotion: setLatestMotion, onObservation: recordObservation });
     } catch (error) {
       await nativeTrackerService.stop();
       stopSession();
@@ -75,8 +75,9 @@ export default function ScanScreen() {
       </View>
       <View style={styles.metrics}>
         <MetricTile icon="speed" label="步行速度" value={formatSpeed(state.latestLocation?.speedMps ?? null)} />
-        <MetricTile icon="explore" label="移动方向" value={formatHeading(state.latestLocation?.headingDegrees ?? null)} />
+        <MetricTile icon="explore" label="手机朝向" value={formatHeading(state.latestMotion?.phoneHeadingDegrees ?? null)} />
       </View>
+      <Text style={[styles.motionHint, { color: colors.tabIconDefault }]}>行进航向：{formatHeading(state.latestLocation?.headingDegrees ?? null)} · 传感器：{state.latestMotion?.headingSource === "magnetometer" ? "罗盘" : state.latestMotion?.headingSource === "location" ? "定位航向" : "等待"} · 运动强度：{state.latestMotion?.movementIntensityMps2 == null ? "等待" : `${state.latestMotion.movementIntensityMps2.toFixed(1)} m/s²`}</Text>
       <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>最近发现</Text><Pressable onPress={() => router.push("/(tabs)/devices" as never)} style={({ pressed }) => pressed && styles.buttonPressed}><Text style={styles.allLink}>查看全部</Text></Pressable></View>
       {state.devices.length ? (
         <View style={[styles.latestDevice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -111,6 +112,7 @@ const styles = StyleSheet.create({
   coordinate: { fontSize: 22, fontVariant: ["tabular-nums"], fontWeight: "700", letterSpacing: -0.2, lineHeight: 28 },
   locationMeta: { fontSize: 12, lineHeight: 18 },
   metrics: { flexDirection: "row", gap: 8, marginTop: 8 },
+  motionHint: { fontSize: 12, lineHeight: 18, marginTop: 7, paddingHorizontal: 3 },
   sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 10, marginTop: 24 },
   sectionTitle: { fontSize: 17, fontWeight: "700" },
   allLink: { color: "#006C5F", fontSize: 14, fontWeight: "700", padding: 6 },

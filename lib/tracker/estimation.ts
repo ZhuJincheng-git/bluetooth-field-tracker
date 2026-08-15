@@ -1,4 +1,4 @@
-import type { DeviceObservation, DirectionEstimate, DistanceBand } from "@/lib/tracker/types";
+import type { DeviceObservation, DirectionEstimate, DistanceBand, RelativePosition, SignalBearingEstimate } from "@/lib/tracker/types";
 
 const EARTH_RADIUS_M = 6_371_000;
 
@@ -26,6 +26,37 @@ function toDistanceBand(rssi: number | null): DistanceBand {
   if (rssi >= -60) return "near";
   if (rssi >= -75) return "medium";
   return "far";
+}
+
+function normalizeDegrees(value: number): number {
+  return ((value % 360) + 360) % 360;
+}
+
+function coverageDegrees(angles: number[]): number {
+  if (angles.length < 2) return 0;
+  const sorted = angles.map(normalizeDegrees).sort((left, right) => left - right);
+  const gaps = sorted.map((angle, index) => normalizeDegrees(sorted[(index + 1) % sorted.length] - angle));
+  return 360 - Math.max(...gaps);
+}
+
+function circularWeightedMean(samples: Array<{ angle: number; weight: number }>): number {
+  const vector = samples.reduce((current, sample) => {
+    const radians = (sample.angle * Math.PI) / 180;
+    return { x: current.x + Math.cos(radians) * sample.weight, y: current.y + Math.sin(radians) * sample.weight };
+  }, { x: 0, y: 0 });
+  return normalizeDegrees((Math.atan2(vector.y, vector.x) * 180) / Math.PI);
+}
+
+function positionForRelativeBearing(relativeBearingDegrees: number): RelativePosition {
+  const index = Math.round(normalizeDegrees(relativeBearingDegrees) / 45) % 8;
+  return ["front", "frontRight", "right", "rearRight", "rear", "rearLeft", "left", "frontLeft"][index] as RelativePosition;
+}
+
+export function relativePositionLabel(position: RelativePosition): string {
+  return {
+    front: "前方", frontRight: "右前方", right: "右侧", rearRight: "右后方",
+    rear: "后方", rearLeft: "左后方", left: "左侧", frontLeft: "左前方", unknown: "采样不足",
+  }[position];
 }
 
 /**
@@ -65,5 +96,43 @@ export function estimateDirection(observations: DeviceObservation[]): DirectionE
     rationale: deltaRssi > 0
       ? "沿当前移动轨迹的 RSSI 整体增强，设备可能位于行进前方或接近路径上。"
       : "沿当前移动轨迹的 RSSI 整体减弱，设备可能位于行进后方或远离路径上。",
+  };
+}
+
+/**
+ * 在用户转动手机时，以平滑后的 RSSI 峰值关联当时的手机罗盘朝向。
+ * 这是用于“指向性扫描”的粗略扇区法，绝不等同于设备坐标或精确距离。
+ */
+export function estimateSignalBearing(observations: DeviceObservation[]): SignalBearingEstimate {
+  const newestTimestamp = Math.max(...observations.map((item) => item.observedAt), 0);
+  const ordered = observations
+    .filter((item) => item.observedAt >= newestTimestamp - 45_000)
+    .sort((left, right) => left.observedAt - right.observedAt);
+  const samples = ordered
+    .filter((item): item is DeviceObservation & { rssi: number; motion: NonNullable<DeviceObservation["motion"]> } => item.rssi != null && item.motion?.phoneHeadingDegrees != null)
+    .map((item) => ({ heading: item.motion.phoneHeadingDegrees!, rssi: item.rssi }));
+  const latest = ordered.at(-1);
+  const base = {
+    samplesUsed: samples.length,
+    coverageDegrees: coverageDegrees(samples.map((sample) => sample.heading)),
+    rssiRangeDb: samples.length ? Math.max(...samples.map((sample) => sample.rssi)) - Math.min(...samples.map((sample) => sample.rssi)) : 0,
+    updatedAt: latest?.observedAt ?? Date.now(),
+  };
+
+  if (samples.length < 6 || base.coverageDegrees < 70 || base.rssiRangeDb < 4) {
+    return { ...base, relativePosition: "unknown", absoluteBearingDegrees: null, relativeBearingDegrees: null, confidence: "low", rationale: "请缓慢转动手机覆盖更大角度，并持续收集稳定的 RSSI 样本。" };
+  }
+
+  const minRssi = Math.min(...samples.map((sample) => sample.rssi));
+  const peakBearing = circularWeightedMean(samples.map((sample) => ({ angle: sample.heading, weight: sample.rssi - minRssi + 1 })));
+  const currentHeading = samples.at(-1)!.heading;
+  const relativeBearing = normalizeDegrees(peakBearing - currentHeading);
+  return {
+    ...base,
+    relativePosition: positionForRelativeBearing(relativeBearing),
+    absoluteBearingDegrees: Math.round(peakBearing),
+    relativeBearingDegrees: Math.round(relativeBearing),
+    confidence: samples.length >= 12 && base.coverageDegrees >= 120 && base.rssiRangeDb >= 8 ? "medium" : "low",
+    rationale: "依据手机转动过程中 RSSI 较强的扫描扇区推导；人体、遮挡与反射会影响结果。",
   };
 }

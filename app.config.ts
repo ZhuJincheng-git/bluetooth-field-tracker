@@ -111,6 +111,7 @@ const config: ExpoConfig = {
         androidForegroundServiceIcon: "./assets/images/android-icon-monochrome.png",
       },
     ],
+    "expo-sensors",
     [
       "expo-notifications",
       {

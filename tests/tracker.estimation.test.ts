@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { estimateDirection } from "../lib/tracker/estimation";
+import { estimateDirection, estimateSignalBearing } from "../lib/tracker/estimation";
 import type { DeviceObservation } from "../lib/tracker/types";
 
 function observation(index: number, rssi: number, latitudeDelta = index * 0.00012): DeviceObservation {
@@ -12,6 +12,7 @@ function observation(index: number, rssi: number, latitudeDelta = index * 0.0001
     txPowerLevel: null,
     observedAt: 1_700_000_000_000 + index * 5_000,
     location: { latitude: 31.2304 + latitudeDelta, longitude: 121.4737, accuracyM: 10, altitudeM: null, speedMps: 1.5, headingDegrees: 0, capturedAt: 1_700_000_000_000 + index * 5_000 },
+    motion: { phoneHeadingDegrees: index * 30, headingSource: "magnetometer", movementIntensityMps2: 0.4, magneticFieldUt: 45, capturedAt: 1_700_000_000_000 + index * 5_000 },
   };
 }
 
@@ -33,5 +34,23 @@ describe("estimateDirection", () => {
     const result = estimateDirection([observation(0, -55), observation(1, -63), observation(2, -69), observation(3, -77)]);
     expect(result.direction).toBe("behind");
     expect(result.distanceBand).toBe("far");
+  });
+
+  it("derives a conservative relative sector only after the phone rotates through enough RSSI samples", () => {
+    const result = estimateSignalBearing([
+      observation(0, -90), observation(1, -85), observation(2, -78), observation(3, -70),
+      observation(4, -72), observation(5, -80), observation(6, -88), observation(7, -92),
+    ]);
+    expect(result.relativePosition).not.toBe("unknown");
+    expect(result.coverageDegrees).toBeGreaterThanOrEqual(70);
+    expect(result.confidence).toBe("low");
+  });
+
+  it("ignores stale rotations when producing a live signal-bearing estimate", () => {
+    const stale = Array.from({ length: 8 }, (_, index) => ({ ...observation(index, -70 + index), observedAt: 1_000 + index * 1_000 }));
+    const latest = { ...observation(9, -72), observedAt: 100_000 };
+    const result = estimateSignalBearing([...stale, latest]);
+    expect(result.relativePosition).toBe("unknown");
+    expect(result.samplesUsed).toBe(1);
   });
 });

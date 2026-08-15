@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
 
 import { clearTrackerState, loadTrackerState, saveTrackerState } from "@/lib/tracker/storage";
-import { estimateDirection } from "@/lib/tracker/estimation";
+import { estimateDirection, estimateSignalBearing } from "@/lib/tracker/estimation";
 import {
   DEFAULT_TRACKER_PREFERENCES,
   type DeviceObservation,
   type LocationSnapshot,
+  type MotionSnapshot,
   type PermissionStatus,
   type ScanLifecycle,
   type ScanSession,
@@ -31,6 +32,7 @@ type TrackerAction =
   | { type: "setLifecycle"; lifecycle: ScanLifecycle; error?: string | null }
   | { type: "setPermissions"; permissions: Partial<PermissionStatus> }
   | { type: "setLocation"; location: LocationSnapshot | null }
+  | { type: "setMotion"; motion: MotionSnapshot | null }
   | { type: "recordObservation"; observation: DeviceObservation; devices: TrackedDeviceSummary[] }
   | { type: "setPreferences"; preferences: TrackerPreferences }
   | { type: "deleteSession"; sessionId: string }
@@ -48,6 +50,7 @@ const initialState: TrackerState = {
   lifecycle: "idle",
   activeSession: null,
   latestLocation: null,
+  latestMotion: null,
   permissions: INITIAL_PERMISSIONS,
   devices: [],
   lastError: null,
@@ -73,6 +76,7 @@ function summarizeDevices(observations: DeviceObservation[]): TrackedDeviceSumma
         lastSeenAt: last.observedAt,
         observationCount: items.length,
         estimate: estimateDirection(items),
+        signalBearing: estimateSignalBearing(items),
       };
     })
     .sort((left, right) => right.lastSeenAt - left.lastSeenAt);
@@ -110,6 +114,8 @@ function reducer(state: TrackerState, action: TrackerAction): TrackerState {
       return { ...state, permissions: { ...state.permissions, ...action.permissions } };
     case "setLocation":
       return { ...state, latestLocation: action.location };
+    case "setMotion":
+      return { ...state, latestMotion: action.motion };
     case "recordObservation": {
       const observations = [...state.observations, action.observation];
       const sessions = state.sessions.map((session) =>
@@ -145,6 +151,7 @@ interface TrackerContextValue {
   setLifecycle: (lifecycle: ScanLifecycle, error?: string | null) => void;
   setPermissions: (permissions: Partial<PermissionStatus>) => void;
   setLatestLocation: (location: LocationSnapshot | null) => void;
+  setLatestMotion: (motion: MotionSnapshot | null) => void;
   recordObservation: (observation: Omit<DeviceObservation, "id" | "sessionId">) => void;
   setPreferences: (preferences: TrackerPreferences) => void;
   deleteSession: (sessionId: string) => void;
@@ -222,6 +229,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
       setLifecycle: (lifecycle, error) => dispatch({ type: "setLifecycle", lifecycle, error }),
       setPermissions: (permissions) => dispatch({ type: "setPermissions", permissions }),
       setLatestLocation: (location) => dispatch({ type: "setLocation", location }),
+      setLatestMotion: (motion) => dispatch({ type: "setMotion", motion }),
       recordObservation,
       setPreferences: (preferences) => dispatch({ type: "setPreferences", preferences }),
       deleteSession: (sessionId) => {

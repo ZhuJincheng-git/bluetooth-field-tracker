@@ -1,5 +1,6 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconAction, ScreenTitle } from "@/components/tracker/ui";
@@ -15,43 +16,39 @@ function formatDate(timestamp: number): string {
 export default function HistoryScreen() {
   const colors = useColors();
   const { state, clearHistory, deleteSession } = useTracker();
-  const handleClear = () => {
-    Alert.alert("清除本地历史？", "此操作会清除本机保存的所有扫描会话与观测记录，且无法恢复。", [
-      { text: "取消", style: "cancel" },
-      { text: "清除", style: "destructive", onPress: () => void clearHistory() },
-    ]);
-  };
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
   const handleExport = async (session: ScanSession) => {
     const observations = state.observations.filter((observation) => observation.sessionId === session.id);
     try {
       const result = await exportSessionData(session, observations);
-      Alert.alert("本次扫描 JSON 已创建", `此文件仅包含该次扫描会话和 ${observations.length} 条观测。请在系统面板中选择保存或分享位置。`);
+      setFeedback(`已准备 ${result.fileName}：仅包含本次扫描及 ${observations.length} 条观测。`);
     } catch (error) {
-      Alert.alert("导出未完成", error instanceof Error ? error.message : "无法创建导出文件。");
+      setFeedback(`导出未完成：${error instanceof Error ? error.message : "无法创建导出文件。"}`);
     }
   };
   const handleDelete = (session: ScanSession) => {
     if (!session.stoppedAt) {
-      Alert.alert("正在采集", "请先停止当前扫描，再删除这条扫描记录。");
+      setFeedback("当前扫描正在运行；请先停止采集后再删除该记录。");
       return;
     }
-    Alert.alert("删除本次扫描？", "将只删除该会话及其设备观测，其他扫描记录不会受影响。", [
-      { text: "取消", style: "cancel" },
-      { text: "删除", style: "destructive", onPress: () => deleteSession(session.id) },
-    ]);
+    setPendingDeleteSessionId(session.id);
   };
 
   return (
     <ScreenContainer className="px-5" safeAreaClassName="pt-3">
       <View style={styles.headerActions}>
         <View style={styles.headerCopy}><ScreenTitle title="扫描历史" subtitle={`${state.sessions.length} 次扫描 · ${state.observations.length} 条观测`} /></View>
-        <IconAction icon="delete-outline" label="清空全部扫描记录" onPress={handleClear} />
+        <IconAction icon="delete-outline" label="清空全部扫描记录" onPress={() => setConfirmClear(true)} />
       </View>
+      {feedback ? <View style={[styles.feedback, { backgroundColor: "#E1F5ED" }]}><MaterialIcons name="info-outline" size={18} color="#006C5F" /><Text style={styles.feedbackText}>{feedback}</Text><Pressable onPress={() => setFeedback(null)} style={styles.feedbackClose}><MaterialIcons name="close" size={18} color="#006C5F" /></Pressable></View> : null}
+      {confirmClear ? <View style={[styles.confirmStrip, { backgroundColor: "#FFF8F6", borderColor: "#F2B8B5" }]}><Text style={styles.confirmText}>清空会删除所有扫描会话，无法恢复。</Text><Pressable onPress={() => setConfirmClear(false)}><Text style={styles.cancelText}>取消</Text></Pressable><Pressable onPress={() => { void clearHistory(); setConfirmClear(false); }}><Text style={styles.confirmDeleteText}>确认清空</Text></Pressable></View> : null}
       <FlatList
         data={state.sessions}
         keyExtractor={(item) => item.id}
         contentContainerStyle={state.sessions.length ? styles.list : styles.emptyList}
-        renderItem={({ item }) => <SessionCard session={item} onExport={() => void handleExport(item)} onDelete={() => handleDelete(item)} />}
+        renderItem={({ item }) => <SessionCard session={item} isPendingDelete={pendingDeleteSessionId === item.id} onExport={() => void handleExport(item)} onDelete={() => handleDelete(item)} onCancelDelete={() => setPendingDeleteSessionId(null)} onConfirmDelete={() => { deleteSession(item.id); setPendingDeleteSessionId(null); setFeedback("已删除该次扫描及其观测。"); }} />}
         ListEmptyComponent={
           <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <MaterialIcons name="history" size={38} color="#006C5F" />
@@ -64,7 +61,7 @@ export default function HistoryScreen() {
   );
 }
 
-function SessionCard({ session, onExport, onDelete }: { session: ScanSession; onExport: () => void; onDelete: () => void }) {
+function SessionCard({ session, onExport, onDelete, onCancelDelete, onConfirmDelete, isPendingDelete }: { session: ScanSession; onExport: () => void; onDelete: () => void; onCancelDelete: () => void; onConfirmDelete: () => void; isPendingDelete: boolean }) {
   const colors = useColors();
   const durationMs = (session.stoppedAt ?? Date.now()) - session.startedAt;
   const minutes = Math.max(1, Math.round(durationMs / 60_000));
@@ -86,7 +83,7 @@ function SessionCard({ session, onExport, onDelete }: { session: ScanSession; on
           <MaterialIcons name="ios-share" size={18} color="#006C5F" />
           <Text style={styles.exportText}>导出本次 JSON</Text>
         </Pressable>
-        {session.stoppedAt ? (
+        {isPendingDelete ? <View style={styles.inlineDelete}><Text style={styles.inlineDeleteText}>删除此会话？</Text><Pressable onPress={onCancelDelete}><Text style={styles.cancelText}>取消</Text></Pressable><Pressable onPress={onConfirmDelete}><Text style={styles.confirmDeleteText}>确认</Text></Pressable></View> : session.stoppedAt ? (
           <Pressable accessibilityRole="button" accessibilityLabel="删除本次扫描" onPress={onDelete} style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}>
             <MaterialIcons name="delete-outline" size={18} color="#B3261E" />
             <Text style={styles.deleteText}>删除</Text>
@@ -114,10 +111,19 @@ const styles = StyleSheet.create({
   cardMetrics: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", gap: 16, paddingTop: 12 },
   metricText: { fontSize: 12 },
   cardActions: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  feedback: { alignItems: "center", borderRadius: 14, flexDirection: "row", gap: 8, marginBottom: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  feedbackText: { color: "#003731", flex: 1, fontSize: 12, lineHeight: 17 },
+  feedbackClose: { padding: 2 },
+  confirmStrip: { alignItems: "center", borderRadius: 14, borderWidth: 1, flexDirection: "row", gap: 10, marginBottom: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  confirmText: { color: "#5F2120", flex: 1, fontSize: 12, lineHeight: 17 },
   exportButton: { alignItems: "center", backgroundColor: "#E1F5ED", borderRadius: 999, flexDirection: "row", gap: 6, minHeight: 38, paddingHorizontal: 13 },
   exportText: { color: "#006C5F", fontSize: 13, fontWeight: "700" },
   deleteButton: { alignItems: "center", borderRadius: 999, flexDirection: "row", gap: 5, minHeight: 38, paddingHorizontal: 8 },
   deleteText: { color: "#B3261E", fontSize: 13, fontWeight: "700" },
+  inlineDelete: { alignItems: "center", flexDirection: "row", gap: 8 },
+  inlineDeleteText: { color: "#5F2120", fontSize: 12 },
+  cancelText: { color: "#5B625F", fontSize: 12, fontWeight: "700" },
+  confirmDeleteText: { color: "#B3261E", fontSize: 12, fontWeight: "700" },
   activeHint: { fontSize: 12 },
   pressed: { opacity: 0.65, transform: [{ scale: 0.98 }] },
 });

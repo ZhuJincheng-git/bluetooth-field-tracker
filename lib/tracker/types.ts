@@ -23,6 +23,16 @@ export interface LocationSnapshot {
   capturedAt: number;
 }
 
+export interface MotionSnapshot {
+  /** 手机正面朝向，相对于正北顺时针的角度；不同于 GPS 行进航向。 */
+  phoneHeadingDegrees: number | null;
+  headingSource: "magnetometer" | "location" | "unknown";
+  /** 去除重力后的瞬时加速度模长，用于标识传感器是否检测到实际运动。 */
+  movementIntensityMps2: number | null;
+  magneticFieldUt: number | null;
+  capturedAt: number;
+}
+
 export interface BluetoothDeviceIdentity {
   /** 由 Android BLE 栈提供的稳定设备标识；导出时仅在用户明确选择时保留原始值。 */
   id: string;
@@ -39,6 +49,7 @@ export interface DeviceObservation {
   txPowerLevel: number | null;
   observedAt: number;
   location: LocationSnapshot | null;
+  motion: MotionSnapshot | null;
 }
 
 export interface ScanSession {
@@ -59,12 +70,28 @@ export interface DirectionEstimate {
   updatedAt: number;
 }
 
+export type RelativePosition = "front" | "frontRight" | "right" | "rearRight" | "rear" | "rearLeft" | "left" | "frontLeft" | "unknown";
+
+export interface SignalBearingEstimate {
+  relativePosition: RelativePosition;
+  /** 最大 RSSI 所在扫描扇区推导出的粗略罗盘方位，并非设备坐标。 */
+  absoluteBearingDegrees: number | null;
+  relativeBearingDegrees: number | null;
+  confidence: ConfidenceLevel;
+  samplesUsed: number;
+  coverageDegrees: number;
+  rssiRangeDb: number;
+  rationale: string;
+  updatedAt: number;
+}
+
 export interface TrackedDeviceSummary {
   device: BluetoothDeviceIdentity;
   lastRssi: number | null;
   lastSeenAt: number;
   observationCount: number;
   estimate: DirectionEstimate;
+  signalBearing: SignalBearingEstimate;
 }
 
 export interface PermissionStatus {
@@ -83,8 +110,8 @@ export interface TrackerPreferences {
 
 export const DEFAULT_TRACKER_PREFERENCES: TrackerPreferences = {
   observationThrottleMs: 2_000,
-  locationIntervalMs: 10_000,
-  locationDistanceIntervalM: 10,
+  locationIntervalMs: 2_000,
+  locationDistanceIntervalM: 1,
   requestBackgroundTracking: true,
 };
 
@@ -92,6 +119,7 @@ export interface TrackerSnapshot {
   lifecycle: ScanLifecycle;
   activeSession: ScanSession | null;
   latestLocation: LocationSnapshot | null;
+  latestMotion: MotionSnapshot | null;
   permissions: PermissionStatus;
   devices: TrackedDeviceSummary[];
   lastError: string | null;

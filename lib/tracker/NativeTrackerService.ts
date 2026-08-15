@@ -1,13 +1,19 @@
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
+import { DeviceMotion, Magnetometer } from "expo-sensors";
 import BackgroundService from "react-native-background-actions";
 import { BleManager, State, type Device } from "react-native-ble-plx";
 import { PermissionsAndroid, Platform } from "react-native";
 
 import { BACKGROUND_LOCATION_TASK, toSnapshot } from "@/lib/tracker/background-location-task";
-import type { BluetoothDeviceIdentity, DeviceObservation, LocationSnapshot, PermissionStatus, TrackerPreferences } from "@/lib/tracker/types";
+import type { BluetoothDeviceIdentity, DeviceObservation, LocationSnapshot, MotionSnapshot, PermissionStatus, TrackerPreferences } from "@/lib/tracker/types";
 
 const delay = (durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs));
+
+function magneticHeadingDegrees(x: number, y: number): number {
+  const angle = (Math.atan2(y, x) * 180) / Math.PI;
+  return ((360 - angle) % 360 + 360) % 360;
+}
 
 async function foregroundKeepAliveTask(): Promise<void> {
   while (BackgroundService.isRunning()) {
@@ -34,13 +40,18 @@ function backgroundError(error: unknown): Error {
 
 export interface NativeTrackerCallbacks {
   onLocation: (location: LocationSnapshot) => void;
+  onMotion: (motion: MotionSnapshot) => void;
   onObservation: (observation: Omit<DeviceObservation, "id" | "sessionId">) => void;
 }
 
 export class NativeTrackerService {
   private bleManager: BleManager | null = null;
   private latestLocation: LocationSnapshot | null = null;
+  private latestMotion: MotionSnapshot | null = null;
   private locationSubscription: Location.LocationSubscription | null = null;
+  private headingSubscription: Location.LocationSubscription | null = null;
+  private motionSubscription: { remove: () => void } | null = null;
+  private magnetometerSubscription: { remove: () => void } | null = null;
   private lastRecordedAtByDevice = new Map<string, number>();
   private isScanning = false;
 
@@ -97,18 +108,73 @@ export class NativeTrackerService {
         });
       }
 
+      const updateLocation = (location: Location.LocationObject) => {
+        const next = toSnapshot(location);
+        const previous = this.latestLocation;
+        if ((next.headingDegrees == null || next.headingDegrees < 0) && previous) {
+          const elapsedSeconds = Math.max(0.001, (next.capturedAt - previous.capturedAt) / 1_000);
+          const latitudeDelta = (next.latitude - previous.latitude) * 111_320;
+          const longitudeDelta = (next.longitude - previous.longitude) * 111_320 * Math.cos((next.latitude * Math.PI) / 180);
+          const distance = Math.hypot(latitudeDelta, longitudeDelta);
+          if (distance >= 1) {
+            const inferredHeading = (Math.atan2(longitudeDelta, latitudeDelta) * 180) / Math.PI;
+            if (next.speedMps == null || next.speedMps <= 0) next.speedMps = distance / elapsedSeconds;
+            if (next.headingDegrees == null || next.headingDegrees < 0 || (next.headingDegrees === 0 && inferredHeading > 5)) {
+              next.headingDegrees = inferredHeading < 0 ? inferredHeading + 360 : inferredHeading;
+            }
+          }
+        }
+        this.latestLocation = next;
+        callbacks.onLocation(next);
+      };
+
+      const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 120_000, requiredAccuracy: 100 });
+      if (lastKnown) updateLocation(lastKnown);
+      void Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: false })
+        .then(updateLocation)
+        .catch(() => undefined);
+
       this.locationSubscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.Balanced,
           timeInterval: preferences.locationIntervalMs,
           distanceInterval: preferences.locationDistanceIntervalM,
-          mayShowUserSettingsDialog: true,
+          mayShowUserSettingsDialog: false,
         },
-        (location) => {
-          this.latestLocation = toSnapshot(location);
-          callbacks.onLocation(this.latestLocation);
-        },
+        updateLocation,
       );
+
+      this.headingSubscription = await Location.watchHeadingAsync((heading) => {
+        const phoneHeadingDegrees = heading.trueHeading >= 0 ? heading.trueHeading : heading.magHeading;
+        this.latestMotion = { ...this.latestMotion, phoneHeadingDegrees, headingSource: "location", movementIntensityMps2: this.latestMotion?.movementIntensityMps2 ?? null, magneticFieldUt: this.latestMotion?.magneticFieldUt ?? null, capturedAt: Date.now() };
+        callbacks.onMotion(this.latestMotion);
+      });
+
+      if (await DeviceMotion.isAvailableAsync()) {
+        DeviceMotion.setUpdateInterval(200);
+        this.motionSubscription = DeviceMotion.addListener((motion) => {
+          const acceleration = motion.acceleration;
+          const movementIntensityMps2 = acceleration ? Math.hypot(acceleration.x, acceleration.y, acceleration.z) : null;
+          this.latestMotion = { ...this.latestMotion, phoneHeadingDegrees: this.latestMotion?.phoneHeadingDegrees ?? null, headingSource: this.latestMotion?.headingSource ?? "unknown", movementIntensityMps2, magneticFieldUt: this.latestMotion?.magneticFieldUt ?? null, capturedAt: Date.now() };
+          callbacks.onMotion(this.latestMotion);
+        });
+      }
+
+      if (await Magnetometer.isAvailableAsync()) {
+        Magnetometer.setUpdateInterval(200);
+        this.magnetometerSubscription = Magnetometer.addListener((field) => {
+          const magneticFieldUt = Math.hypot(field.x, field.y, field.z);
+          this.latestMotion = {
+            ...this.latestMotion,
+            phoneHeadingDegrees: magneticHeadingDegrees(field.x, field.y),
+            headingSource: "magnetometer",
+            movementIntensityMps2: this.latestMotion?.movementIntensityMps2 ?? null,
+            magneticFieldUt,
+            capturedAt: Date.now(),
+          };
+          callbacks.onMotion(this.latestMotion);
+        });
+      }
 
       if (preferences.requestBackgroundTracking) {
         const hasStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
@@ -148,6 +214,7 @@ export class NativeTrackerService {
           txPowerLevel: device.txPowerLevel ?? null,
           observedAt: Date.now(),
           location: this.latestLocation,
+          motion: this.latestMotion,
         });
       });
     } catch (error) {
@@ -164,6 +231,13 @@ export class NativeTrackerService {
     this.bleManager = null;
     this.locationSubscription?.remove();
     this.locationSubscription = null;
+    this.headingSubscription?.remove();
+    this.headingSubscription = null;
+    this.motionSubscription?.remove();
+    this.motionSubscription = null;
+    this.magnetometerSubscription?.remove();
+    this.magnetometerSubscription = null;
+    this.latestMotion = null;
 
     if (Platform.OS === "android") {
       const locationUpdatesRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);

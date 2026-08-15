@@ -6,6 +6,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { ScreenTitle, StatusPill } from "@/components/tracker/ui";
 import { useColors } from "@/hooks/use-colors";
 import { distanceBandLabel, rssiLabel } from "@/lib/tracker/format";
+import { relativePositionLabel } from "@/lib/tracker/estimation";
 import { useTracker } from "@/lib/tracker/TrackerProvider";
 import type { TrackedDeviceSummary } from "@/lib/tracker/types";
 
@@ -56,7 +57,7 @@ function DeviceRow({ item }: { item: TrackedDeviceSummary }) {
       <View style={styles.deviceCopy}>
         <Text style={[styles.deviceName, { color: colors.text }]} numberOfLines={1}>{deviceName(item)}</Text>
         <Text style={[styles.deviceId, { color: colors.tabIconDefault }]} numberOfLines={1}>{item.device.id}</Text>
-        <Text style={[styles.deviceEstimate, { color: colors.tabIconDefault }]}>{distanceBandLabel(item.estimate.distanceBand)} · {item.estimate.direction === "unknown" ? "方向待估算" : item.estimate.direction === "ahead" ? "可能在前方" : "可能在后方"}</Text>
+        <Text style={[styles.deviceEstimate, { color: colors.tabIconDefault }]}>{distanceBandLabel(item.estimate.distanceBand)} · {relativePositionLabel(item.signalBearing.relativePosition)} · {item.signalBearing.samplesUsed} 个方位样本</Text>
       </View>
       <View style={styles.rssi}>
         <Text style={[styles.rssiValue, { color: colors.text }]}>{rssiLabel(item.lastRssi)}</Text>
