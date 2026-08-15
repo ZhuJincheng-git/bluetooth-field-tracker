@@ -1,48 +1,108 @@
-import { ScrollView, Text, View, TouchableOpacity } from "react-native";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { router } from "expo-router";
+import { useEffect, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { IconAction, MetricTile, ScreenTitle, StatusPill } from "@/components/tracker/ui";
+import { useColors } from "@/hooks/use-colors";
+import { formatElapsed, formatHeading, formatSpeed } from "@/lib/tracker/format";
+import { nativeTrackerService } from "@/lib/tracker/NativeTrackerService";
+import { useTracker } from "@/lib/tracker/TrackerProvider";
 
-/**
- * Home Screen - NativeWind Example
- *
- * This template uses NativeWind (Tailwind CSS for React Native).
- * You can use familiar Tailwind classes directly in className props.
- *
- * Key patterns:
- * - Use `className` instead of `style` for most styling
- * - Theme colors: use tokens directly (bg-background, text-foreground, bg-primary, etc.); no dark: prefix needed
- * - Responsive: standard Tailwind breakpoints work on web
- * - Custom colors defined in tailwind.config.js
- */
-export default function HomeScreen() {
+export default function ScanScreen() {
+  const colors = useColors();
+  const { state, startSession, stopSession, recordObservation, setLatestLocation, setLifecycle, setPermissions } = useTracker();
+  const [now, setNow] = useState(Date.now());
+  const isScanning = state.lifecycle === "scanning";
+
+  useEffect(() => {
+    if (!isScanning) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [isScanning]);
+
+  const handleStart = async () => {
+    setLifecycle("starting");
+    try {
+      const permissions = await nativeTrackerService.requestRequiredPermissions(state.preferences.requestBackgroundTracking);
+      setPermissions(permissions);
+      if (permissions.bluetooth !== "granted" || permissions.locationForeground !== "granted") {
+        throw new Error("需要蓝牙扫描和精确位置权限才能创建采集记录。请在系统设置中允许后重试。");
+      }
+      if (state.preferences.requestBackgroundTracking && permissions.locationBackground !== "granted") {
+        throw new Error("后台采集需要“始终允许”位置权限。请在系统设置完成授权，或在设置中关闭后台采集后重试。");
+      }
+      startSession();
+      await nativeTrackerService.start(state.preferences, { onLocation: setLatestLocation, onObservation: recordObservation });
+    } catch (error) {
+      await nativeTrackerService.stop();
+      stopSession();
+      setLifecycle("error", error instanceof Error ? error.message : "无法开始采集。");
+    }
+  };
+
+  const handleStop = async () => {
+    setLifecycle("stopping");
+    await nativeTrackerService.stop();
+    stopSession();
+  };
+
   return (
-    <ScreenContainer className="p-6">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-        <View className="flex-1 gap-8">
-          {/* Hero Section */}
-          <View className="items-center gap-2">
-            <Text className="text-4xl font-bold text-foreground">Welcome</Text>
-            <Text className="text-base text-muted text-center">
-              Edit app/(tabs)/index.tsx to get started
-            </Text>
-          </View>
-
-          {/* Example Card */}
-          <View className="w-full max-w-sm self-center bg-surface rounded-2xl p-6 shadow-sm border border-border">
-            <Text className="text-lg font-semibold text-foreground mb-2">NativeWind Ready</Text>
-            <Text className="text-sm text-muted leading-relaxed">
-              Use Tailwind CSS classes directly in your React Native components.
-            </Text>
-          </View>
-
-          {/* Example Button */}
-          <View className="items-center">
-            <TouchableOpacity className="bg-primary px-6 py-3 rounded-full active:opacity-80">
-              <Text className="text-background font-semibold">Get Started</Text>
-            </TouchableOpacity>
-          </View>
+    <ScreenContainer className="px-5" safeAreaClassName="pt-3">
+      <ScreenTitle title="采集" subtitle="周边 BLE 与运动状态" action={<IconAction icon="settings" label="打开扫描设置" onPress={() => router.push("/settings" as never)} />} />
+      <View style={[styles.hero, { backgroundColor: isScanning ? "#E1F5ED" : colors.surface, borderColor: isScanning ? "#A4F2DF" : colors.border }]}>
+        <View style={styles.heroTop}>
+          <View style={[styles.radar, { backgroundColor: isScanning ? "#A4F2DF" : "#EDF0EE" }]}><MaterialIcons name="radar" size={34} color="#006C5F" /></View>
+          <StatusPill active={isScanning} label={isScanning ? "正在采集" : "准备就绪"} />
         </View>
-      </ScrollView>
+        <Text style={[styles.heroTitle, { color: colors.text }]}>{isScanning ? formatElapsed(state.activeSession?.startedAt ?? now, now) : "开始一次采集"}</Text>
+        <Text style={[styles.heroBody, { color: colors.tabIconDefault }]}>{isScanning ? "正在融合 BLE 广播与最新位置快照。退到后台后仍需保持系统前台服务通知。" : state.lastError ?? "开始后将先检查蓝牙、位置和通知权限，再创建本机扫描会话。"}</Text>
+        <Pressable onPress={() => void (isScanning ? handleStop() : handleStart())} accessibilityRole="button" accessibilityLabel={isScanning ? "停止采集" : "开始采集"} style={({ pressed }) => [styles.primaryButton, { backgroundColor: isScanning ? "#C2382B" : "#006C5F" }, pressed && styles.buttonPressed]}>
+          <MaterialIcons name={isScanning ? "stop-circle" : "play-circle"} size={22} color="#FFFFFF" />
+          <Text style={styles.primaryButtonText}>{isScanning ? "停止采集" : "开始采集"}</Text>
+        </Pressable>
+      </View>
+      <View style={styles.metrics}>
+        <MetricTile icon="location-on" label="位置" value={state.latestLocation ? "已获取" : "等待定位"} />
+        <MetricTile icon="speed" label="速度" value={formatSpeed(state.latestLocation?.speedMps ?? null)} />
+        <MetricTile icon="explore" label="航向" value={formatHeading(state.latestLocation?.headingDegrees ?? null)} />
+      </View>
+      <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>最近发现</Text><Pressable onPress={() => router.push("/(tabs)/devices" as never)} style={({ pressed }) => pressed && styles.buttonPressed}><Text style={styles.allLink}>查看全部</Text></Pressable></View>
+      {state.devices.length ? (
+        <View style={[styles.latestDevice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.deviceIcon}><MaterialIcons name="bluetooth" size={22} color="#006C5F" /></View>
+          <View style={styles.deviceCopy}><Text style={[styles.deviceName, { color: colors.text }]} numberOfLines={1}>{state.devices[0].device.name ?? state.devices[0].device.localName ?? "未命名 BLE 设备"}</Text><Text style={[styles.deviceMeta, { color: colors.tabIconDefault }]}>{state.devices[0].lastRssi ?? "—"} dBm · {state.devices[0].observationCount} 次记录</Text></View>
+          <MaterialIcons name="chevron-right" size={22} color={colors.tabIconDefault} />
+        </View>
+      ) : (
+        <View style={[styles.emptyNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}><MaterialIcons name="sensors" size={20} color="#006C5F" /><Text style={[styles.emptyText, { color: colors.tabIconDefault }]}>尚未写入设备观测。开始采集后，符合条件的 BLE 广播会显示在这里。</Text></View>
+      )}
+      <View style={[styles.privacy, { borderColor: colors.border }]}><MaterialIcons name="privacy-tip" size={18} color={colors.tabIconDefault} /><Text style={[styles.privacyText, { color: colors.tabIconDefault }]}>采集数据默认仅保存在本机。RSSI 方位仅作估算提示，不表示精确定位。</Text></View>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  hero: { borderRadius: 24, borderWidth: 1, gap: 12, padding: 20 },
+  heroTop: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  radar: { alignItems: "center", borderRadius: 18, height: 56, justifyContent: "center", width: 56 },
+  heroTitle: { fontSize: 25, fontWeight: "700", letterSpacing: -0.3, marginTop: 4 },
+  heroBody: { fontSize: 14, lineHeight: 21, minHeight: 42 },
+  primaryButton: { alignItems: "center", borderRadius: 999, flexDirection: "row", gap: 9, justifyContent: "center", marginTop: 6, minHeight: 52 },
+  primaryButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
+  buttonPressed: { opacity: 0.75, transform: [{ scale: 0.98 }] },
+  metrics: { flexDirection: "row", gap: 8, marginTop: 16 },
+  sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 10, marginTop: 24 },
+  sectionTitle: { fontSize: 17, fontWeight: "700" },
+  allLink: { color: "#006C5F", fontSize: 14, fontWeight: "700", padding: 6 },
+  latestDevice: { alignItems: "center", borderRadius: 18, borderWidth: 1, flexDirection: "row", minHeight: 72, padding: 12 },
+  deviceIcon: { alignItems: "center", backgroundColor: "#E1F5ED", borderRadius: 14, height: 42, justifyContent: "center", marginRight: 12, width: 42 },
+  deviceCopy: { flex: 1, gap: 3 },
+  deviceName: { fontSize: 15, fontWeight: "700" },
+  deviceMeta: { fontSize: 12 },
+  emptyNotice: { alignItems: "center", borderRadius: 18, borderWidth: 1, flexDirection: "row", gap: 10, minHeight: 76, padding: 14 },
+  emptyText: { flex: 1, fontSize: 13, lineHeight: 19 },
+  privacy: { alignItems: "flex-start", borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", gap: 9, marginTop: 22, paddingHorizontal: 4, paddingTop: 16 },
+  privacyText: { flex: 1, fontSize: 12, lineHeight: 18 },
+});

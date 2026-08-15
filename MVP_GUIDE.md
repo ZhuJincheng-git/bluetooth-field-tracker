@@ -1,0 +1,47 @@
+# 蓝牙现场追踪 MVP 使用与验收指南
+
+## 运行前提
+
+此 MVP 使用自定义 Android 原生 BLE 模块、位置后台任务和用户可见的前台服务，因此 **不能在 Expo Go 或浏览器预览中验证实际扫描**。请使用 Android 开发构建或发布构建，并在真机上测试。`react-native-ble-plx` 的 Expo 集成需要原生构建；Expo 的后台定位功能同样要求开发构建而非 Expo Go。[1] [2]
+
+| 条件 | 说明 |
+| --- | --- |
+| 设备 | Android 真机，建议 Android 12 或更高版本。 |
+| 蓝牙 | 打开系统蓝牙；首次采集时授予“附近设备”权限。 |
+| 定位 | 允许精确位置；若开启“尝试后台采集”，在系统设置授予“始终允许”。 |
+| 通知 | 允许通知，以便系统持续显示正在采集的前台服务通知。 |
+| 电量优化 | 如设备厂商有激进省电策略，请将本应用加入允许后台运行的白名单；用户强制结束应用后，后台定位和扫描会停止。 |
+
+## 建议验收流程
+
+在 Android 开发构建中打开应用，在“采集”页点击“开始采集”。依次完成蓝牙、位置、后台位置及通知授权。系统通知栏应显示正在采集的前台服务通知；把应用切到后台后，该通知仍应存在。再次打开应用后，采集页应继续显示会话时长，设备页应展示已发现的 BLE 广播，历史页应显示会话与观测数量。
+
+随后携带手机沿一个方向移动至少约 20 米，并让某 BLE 设备保持在相对稳定的位置。多次 RSSI 样本和位置点累积后，详情页才可能给出“可能在前方”或“可能在后方”的趋势。该输出上限为中等置信度，不能作为精确距离、绝对坐标或安全导航判断。
+
+最后在“历史”页点击导出按钮。系统分享面板应出现 JSON 文件；将其保存到设备或发送到任意兼容应用。导出包含版本号、导出时间、会话、原始观测和限制声明，便于将来升级而不破坏数据解析。
+
+## 后台运行边界
+
+Android 官方不建议以无差别的周期扫描方式寻找设备；持续采集应采用用户可见的运行方式，并会受 Android 版本、厂商省电策略与用户手动结束应用影响。[3] 本项目使用 Android 前台服务类型 `location|connectedDevice`，以承载用户主动启动的连续采集；通知不可被静默省略。后台定位任务在 Android 上也需要前台与后台位置权限，并且任务需要在 JavaScript 全局作用域定义。[2] [4]
+
+| 能力 | MVP 行为 | 限制 |
+| --- | --- | --- |
+| BLE 广播扫描 | 记录设备标识、名称、RSSI、发射功率和时间戳。 | 仅 BLE；不支持蓝牙经典设备。 |
+| 位置融合 | 将设备广播与最近位置、速度和航向快照关联。 | GPS、传感器与室内环境可使字段缺失或不精确。 |
+| 后台采集 | 用户主动启动并授权后保持前台服务通知。 | 强制结束应用、撤销权限或厂商电量策略可停止采集。 |
+| 相对方位 | 在有足够移动和 RSSI 变化时显示保守趋势。 | 不输出精确坐标、角度或距离。 |
+| JSON 导出 | 写入应用文档目录后打开系统分享面板。 | 浏览器预览无法分享设备本地文件。 |
+
+## 工程验证结果
+
+项目已经执行 TypeScript 静态检查、全部单元测试和 Android 原生预构建。核心估算和导出结构测试共 4 项通过；模板内未启用的认证退出测试保持跳过。预构建后的 `AndroidManifest.xml` 已包含 BLE、后台位置、通知、前台服务权限以及 `location|connectedDevice` 服务类型。
+
+## 参考
+
+[1] [react-native-ble-plx: Expo SDK integration](https://github.com/dotintent/react-native-ble-plx#expo-sdk-43)
+
+[2] [Expo Location documentation](https://docs.expo.dev/versions/latest/sdk/location/)
+
+[3] [Android Developers: Communicate in the background](https://developer.android.com/develop/connectivity/bluetooth/ble/background)
+
+[4] [Expo TaskManager documentation](https://docs.expo.dev/versions/latest/sdk/task-manager/)
