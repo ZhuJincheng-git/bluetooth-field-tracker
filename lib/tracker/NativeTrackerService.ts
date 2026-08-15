@@ -6,7 +6,7 @@ import { BleManager, State, type Device } from "react-native-ble-plx";
 import { PermissionsAndroid, Platform } from "react-native";
 
 import { BACKGROUND_LOCATION_TASK, toSnapshot } from "@/lib/tracker/background-location-task";
-import { assessLocationQuality } from "@/lib/tracker/location-quality";
+import { assessLocationQuality, shouldPublishLocation } from "@/lib/tracker/location-quality";
 import type { BluetoothDeviceIdentity, DeviceObservation, LocationSnapshot, MotionSnapshot, PermissionStatus, TrackerPreferences } from "@/lib/tracker/types";
 
 const delay = (durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs));
@@ -127,7 +127,7 @@ export class NativeTrackerService {
         const next = toSnapshot(location);
         const previous = this.latestLocation;
         const quality = assessLocationQuality(previous, next, (this.activePreferences ?? preferences).maxLocationAccuracyM);
-        if (quality !== "stable") {
+        if (!shouldPublishLocation(quality)) {
           callbacks.onLocationQuality(quality);
           return;
         }
@@ -149,7 +149,7 @@ export class NativeTrackerService {
         }
         this.latestLocation = next;
         callbacks.onLocation(next);
-        callbacks.onLocationQuality("stable");
+        callbacks.onLocationQuality(quality);
       };
 
       const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 30_000, requiredAccuracy: preferences.maxLocationAccuracyM });

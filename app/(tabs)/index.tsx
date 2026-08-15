@@ -65,7 +65,7 @@ export default function ScanScreen() {
           <StatusPill active={isScanning} label={isScanning ? "正在采集" : "准备就绪"} />
         </View>
         <Text style={[styles.heroTitle, { color: colors.text }]}>{isScanning ? formatElapsed(state.activeSession?.startedAt ?? now, now) : "开始一次采集"}</Text>
-        <Text style={[styles.heroBody, { color: colors.tabIconDefault }]}>{isScanning ? (state.locationQuality === "servicesOff" ? "系统定位服务未开启；蓝牙会继续采集，但观测不会附带坐标。" : hasFreshLocation ? "蓝牙与位置数据正在独立更新；异常或低精度位置会被自动过滤。" : "蓝牙已开始采集，正在等待符合精度要求的首个位置更新。") : state.lastError ?? "开始后将先检查蓝牙、位置和通知权限，再创建本机扫描会话。"}</Text>
+        <Text style={[styles.heroBody, { color: colors.tabIconDefault }]}>{isScanning ? (state.locationQuality === "servicesOff" ? "系统定位服务未开启；蓝牙会继续采集，但观测不会附带坐标。" : hasFreshLocation ? "蓝牙与位置数据正在独立更新；明显异常跳变会被过滤，低精度位置会先显示并继续优化。" : "蓝牙已开始采集，正在等待首个可用位置。") : state.lastError ?? "开始后将先检查蓝牙、位置和通知权限，再创建本机扫描会话。"}</Text>
         <Pressable onPress={() => void (isScanning ? handleStop() : handleStart())} accessibilityRole="button" accessibilityLabel={isScanning ? "停止采集" : "开始采集"} style={({ pressed }) => [styles.primaryButton, { backgroundColor: isScanning ? "#C2382B" : "#006C5F" }, pressed && styles.buttonPressed]}>
           <MaterialIcons name={isScanning ? "stop-circle" : "play-circle"} size={22} color="#FFFFFF" />
           <Text style={styles.primaryButtonText}>{isScanning ? "停止采集" : "开始采集"}</Text>
@@ -74,7 +74,7 @@ export default function ScanScreen() {
       <View style={[styles.locationCard, { backgroundColor: colors.surface, borderColor: hasFreshLocation ? "#A4F2DF" : colors.border }]}>
         <View style={styles.locationHeader}>
           <View style={styles.locationLabel}><MaterialIcons name="my-location" size={19} color="#006C5F" /><Text style={[styles.locationTitle, { color: colors.text }]}>实时位置</Text></View>
-          <View style={[styles.locationLive, { backgroundColor: hasFreshLocation && state.locationQuality === "stable" ? "#E1F5ED" : "#EDF0EE" }]}><View style={[styles.locationDot, { backgroundColor: hasFreshLocation && state.locationQuality === "stable" ? "#006C5F" : colors.tabIconDefault }]} /><Text style={[styles.locationLiveText, { color: hasFreshLocation && state.locationQuality === "stable" ? "#003731" : colors.tabIconDefault }]}>{state.locationQuality === "stable" ? formatLocationAge(state.latestLocation?.capturedAt ?? null, now) : locationQualityLabel(state.locationQuality)}</Text></View>
+          <View style={[styles.locationLive, { backgroundColor: hasFreshLocation ? "#E1F5ED" : "#EDF0EE" }]}><View style={[styles.locationDot, { backgroundColor: hasFreshLocation ? "#006C5F" : colors.tabIconDefault }]} /><Text style={[styles.locationLiveText, { color: hasFreshLocation ? "#003731" : colors.tabIconDefault }]}>{hasFreshLocation ? state.locationQuality === "lowAccuracy" ? "精度较低，更新中" : formatLocationAge(state.latestLocation?.capturedAt ?? null, now) : locationQualityLabel(state.locationQuality)}</Text></View>
         </View>
         <Text style={[styles.coordinate, { color: state.latestLocation ? colors.text : colors.tabIconDefault }]}>{formatCoordinate(state.latestLocation)}</Text>
         <Text style={[styles.locationMeta, { color: colors.tabIconDefault }]}>{formatAccuracy(state.latestLocation?.accuracyM ?? null)} · 最大容许 ±{state.preferences.maxLocationAccuracyM} m · 每 {state.preferences.locationIntervalMs / 1000} 秒或移动 {state.preferences.locationDistanceIntervalM} m 更新</Text>

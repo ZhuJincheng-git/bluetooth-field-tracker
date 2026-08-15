@@ -24,11 +24,19 @@ export function assessLocationQuality(previous: LocationSnapshot | null, next: L
   return "stable";
 }
 
+/**
+ * 低精度位置仍能为用户提供“正在定位”的可见进展，因此允许显示和记录；
+ * 只有与已有位置明显矛盾的跳变才会拒绝，避免首定位或室内定位长期显示为空。
+ */
+export function shouldPublishLocation(quality: LocationQuality): boolean {
+  return quality !== "outlier";
+}
+
 export function locationQualityLabel(quality: LocationQuality): string {
   return {
     waiting: "等待首个定位",
     stable: "定位稳定",
-    lowAccuracy: "已过滤低精度定位",
+    lowAccuracy: "精度较低，仍在更新",
     outlier: "已过滤异常位置跳变",
     servicesOff: "系统定位服务未开启",
   }[quality];
