@@ -7,6 +7,7 @@ import { PermissionsAndroid, Platform } from "react-native";
 
 import { BACKGROUND_LOCATION_TASK, toSnapshot } from "@/lib/tracker/background-location-task";
 import { assessLocationQuality, shouldPublishLocation } from "@/lib/tracker/location-quality";
+import type { NativeTrackerCallbacks } from "@/lib/tracker/ports";
 import type { BluetoothDeviceIdentity, DeviceObservation, LocationSnapshot, MotionSnapshot, PermissionStatus, TrackerPreferences } from "@/lib/tracker/types";
 
 const delay = (durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs));
@@ -37,13 +38,6 @@ function toIdentity(device: Device): BluetoothDeviceIdentity {
 
 function backgroundError(error: unknown): Error {
   return error instanceof Error ? error : new Error("无法启动采集服务。");
-}
-
-export interface NativeTrackerCallbacks {
-  onLocation: (location: LocationSnapshot) => void;
-  onLocationQuality: (quality: import("@/lib/tracker/types").LocationQuality) => void;
-  onMotion: (motion: MotionSnapshot) => void;
-  onObservation: (observation: Omit<DeviceObservation, "id" | "sessionId">) => void;
 }
 
 export class NativeTrackerService {

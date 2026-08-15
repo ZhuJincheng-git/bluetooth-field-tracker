@@ -7,13 +7,14 @@ import { ScreenContainer } from "@/components/screen-container";
 import { IconAction, MetricTile, ScreenTitle, StatusPill } from "@/components/tracker/ui";
 import { useColors } from "@/hooks/use-colors";
 import { formatAccuracy, formatCoordinate, formatElapsed, formatHeading, formatLocationAge, formatSpeed, formatSpeedSource } from "@/lib/tracker/format";
-import { nativeTrackerService } from "@/lib/tracker/NativeTrackerService";
 import { locationQualityLabel } from "@/lib/tracker/location-quality";
+import { trackingController } from "@/lib/tracker/runtime";
 import { useTracker } from "@/lib/tracker/TrackerProvider";
 
 export default function ScanScreen() {
   const colors = useColors();
-  const { state, startSession, stopSession, recordObservation, setLatestLocation, setLatestMotion, setLifecycle, setLocationQuality, setPermissions } = useTracker();
+  const tracker = useTracker();
+  const { state } = tracker;
   const [now, setNow] = useState(Date.now());
   const isScanning = state.lifecycle === "scanning";
   const locationAge = state.latestLocation ? now - state.latestLocation.capturedAt : null;
@@ -26,34 +27,8 @@ export default function ScanScreen() {
   }, [isScanning]);
 
   useEffect(() => {
-    if (isScanning) nativeTrackerService.updatePreferences(state.preferences);
+    if (isScanning) trackingController.applyRuntimePreferences(state.preferences);
   }, [isScanning, state.preferences]);
-
-  const handleStart = async () => {
-    setLifecycle("starting");
-    try {
-      const permissions = await nativeTrackerService.requestRequiredPermissions(state.preferences.requestBackgroundTracking);
-      setPermissions(permissions);
-      if (permissions.bluetooth !== "granted" || permissions.locationForeground !== "granted") {
-        throw new Error("需要蓝牙扫描和精确位置权限才能创建采集记录。请在系统设置中允许后重试。");
-      }
-      if (state.preferences.requestBackgroundTracking && permissions.locationBackground !== "granted") {
-        throw new Error("后台采集需要“始终允许”位置权限。请在系统设置完成授权，或在设置中关闭后台采集后重试。");
-      }
-      startSession();
-      await nativeTrackerService.start(state.preferences, { onLocation: setLatestLocation, onLocationQuality: setLocationQuality, onMotion: setLatestMotion, onObservation: recordObservation });
-    } catch (error) {
-      await nativeTrackerService.stop();
-      stopSession();
-      setLifecycle("error", error instanceof Error ? error.message : "无法开始采集。");
-    }
-  };
-
-  const handleStop = async () => {
-    setLifecycle("stopping");
-    await nativeTrackerService.stop();
-    stopSession();
-  };
 
   return (
     <ScreenContainer className="px-5" safeAreaClassName="pt-3">
@@ -66,7 +41,7 @@ export default function ScanScreen() {
         </View>
         <Text style={[styles.heroTitle, { color: colors.text }]}>{isScanning ? formatElapsed(state.activeSession?.startedAt ?? now, now) : "开始一次采集"}</Text>
         <Text style={[styles.heroBody, { color: colors.tabIconDefault }]}>{isScanning ? (state.locationQuality === "servicesOff" ? "系统定位服务未开启；蓝牙会继续采集，但观测不会附带坐标。" : hasFreshLocation ? "蓝牙与位置数据正在独立更新；明显异常跳变会被过滤，低精度位置会先显示并继续优化。" : "蓝牙已开始采集，正在等待首个可用位置。") : state.lastError ?? "开始后将先检查蓝牙、位置和通知权限，再创建本机扫描会话。"}</Text>
-        <Pressable onPress={() => void (isScanning ? handleStop() : handleStart())} accessibilityRole="button" accessibilityLabel={isScanning ? "停止采集" : "开始采集"} style={({ pressed }) => [styles.primaryButton, { backgroundColor: isScanning ? "#C2382B" : "#006C5F" }, pressed && styles.buttonPressed]}>
+        <Pressable onPress={() => void (isScanning ? trackingController.stop(tracker) : trackingController.start(state.preferences, tracker))} accessibilityRole="button" accessibilityLabel={isScanning ? "停止采集" : "开始采集"} style={({ pressed }) => [styles.primaryButton, { backgroundColor: isScanning ? "#C2382B" : "#006C5F" }, pressed && styles.buttonPressed]}>
           <MaterialIcons name={isScanning ? "stop-circle" : "play-circle"} size={22} color="#FFFFFF" />
           <Text style={styles.primaryButtonText}>{isScanning ? "停止采集" : "开始采集"}</Text>
         </Pressable>

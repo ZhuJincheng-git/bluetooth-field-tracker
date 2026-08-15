@@ -1,6 +1,6 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { router, useLocalSearchParams } from "expo-router";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconAction, ScreenTitle, StatusPill } from "@/components/tracker/ui";
@@ -16,7 +16,6 @@ export default function DeviceDetailScreen() {
   const observations = state.observations.filter((item) => item.device.id === id && (!sessionId || item.sessionId === sessionId)).sort((a, b) => b.observedAt - a.observedAt);
   const device = summarizeDeviceObservations(observations).find((item) => item.device.id === id);
   const label = device?.device.name ?? device?.device.localName ?? "BLE 设备";
-  const estimate = device?.estimate;
   const signalBearing = device?.signalBearing;
 
   return (

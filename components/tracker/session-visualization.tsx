@@ -45,19 +45,19 @@ function Panel({ title, subtitle, children }: { title: string; subtitle: string;
 }
 
 export function SessionRssiChart({ observations }: { observations: DeviceObservation[] }) {
+  const colors = useColors();
   const samples = sampleSeries(observations.filter((item) => item.rssi != null));
   const values = samples.map((item) => item.rssi as number);
   if (values.length < 2) return <Panel title="RSSI 信号变化" subtitle="样本不足"><EmptyChart message="至少需要两条带 RSSI 的观测记录" /></Panel>;
-  const colors = useColors();
   const minimum = Math.min(...values) - 3;
   const maximum = Math.max(...values) + 3;
   return <Panel title="RSSI 信号变化" subtitle={`${values.length} 个抽样点 · ${Math.min(...values)} 至 ${Math.max(...values)} dBm`}><Svg width="100%" height={CHART_HEIGHT} viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}><Line x1={CHART_PADDING} y1={CHART_HEIGHT / 2} x2={CHART_WIDTH - CHART_PADDING} y2={CHART_HEIGHT / 2} stroke={colors.border} strokeWidth="1" /><Polyline points={linePoints(values, minimum, maximum)} fill="none" stroke="#006C5F" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /><Circle cx={CHART_PADDING} cy={Number(linePoints([values[0]], minimum, maximum).split(",")[1])} r="3" fill="#006C5F" /></Svg></Panel>;
 }
 
 export function SessionPathChart({ observations }: { observations: DeviceObservation[] }) {
+  const colors = useColors();
   const locations = sampleSeries(observations.map((item) => item.location).filter((item): item is LocationSnapshot => item != null));
   if (locations.length < 2) return <Panel title="位置轨迹概览" subtitle="本机坐标快照"><EmptyChart message="至少需要两条定位快照才能绘制轨迹" /></Panel>;
-  const colors = useColors();
   const points = coordinatePoints(locations);
   const [first, last] = points.split(" ");
   const [firstX, firstY] = first.split(",").map(Number);
