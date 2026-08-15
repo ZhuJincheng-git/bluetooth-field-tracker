@@ -1,4 +1,5 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { router } from "expo-router";
 import { useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -48,7 +49,7 @@ export default function HistoryScreen() {
         data={state.sessions}
         keyExtractor={(item) => item.id}
         contentContainerStyle={state.sessions.length ? styles.list : styles.emptyList}
-        renderItem={({ item }) => <SessionCard session={item} isPendingDelete={pendingDeleteSessionId === item.id} onExport={() => void handleExport(item)} onDelete={() => handleDelete(item)} onCancelDelete={() => setPendingDeleteSessionId(null)} onConfirmDelete={() => { deleteSession(item.id); setPendingDeleteSessionId(null); setFeedback("已删除该次扫描及其观测。"); }} />}
+        renderItem={({ item }) => <SessionCard session={item} isPendingDelete={pendingDeleteSessionId === item.id} onOpen={() => router.push({ pathname: "/session/[id]" as never, params: { id: item.id } } as never)} onExport={() => void handleExport(item)} onDelete={() => handleDelete(item)} onCancelDelete={() => setPendingDeleteSessionId(null)} onConfirmDelete={() => { deleteSession(item.id); setPendingDeleteSessionId(null); setFeedback("已删除该次扫描及其观测。 "); }} />}
         ListEmptyComponent={
           <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <MaterialIcons name="history" size={38} color="#006C5F" />
@@ -61,23 +62,25 @@ export default function HistoryScreen() {
   );
 }
 
-function SessionCard({ session, onExport, onDelete, onCancelDelete, onConfirmDelete, isPendingDelete }: { session: ScanSession; onExport: () => void; onDelete: () => void; onCancelDelete: () => void; onConfirmDelete: () => void; isPendingDelete: boolean }) {
+function SessionCard({ session, onOpen, onExport, onDelete, onCancelDelete, onConfirmDelete, isPendingDelete }: { session: ScanSession; onOpen: () => void; onExport: () => void; onDelete: () => void; onCancelDelete: () => void; onConfirmDelete: () => void; isPendingDelete: boolean }) {
   const colors = useColors();
   const durationMs = (session.stoppedAt ?? Date.now()) - session.startedAt;
   const minutes = Math.max(1, Math.round(durationMs / 60_000));
   return (
     <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={styles.cardTop}>
+      <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel="查看本次扫描详情" style={({ pressed }) => [styles.cardTop, pressed && styles.pressed]}>
         <View style={styles.calendarIcon}><MaterialIcons name="radar" size={20} color="#006C5F" /></View>
         <View style={styles.cardCopy}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>{formatDate(session.startedAt)}</Text>
           <Text style={[styles.cardSubtitle, { color: colors.tabIconDefault }]}>{session.stoppedAt ? "已结束" : "正在采集"} · {minutes} 分钟</Text>
         </View>
-      </View>
+        <MaterialIcons name="chevron-right" size={22} color={colors.tabIconDefault} />
+      </Pressable>
       <View style={styles.cardMetrics}>
         <Text style={[styles.metricText, { color: colors.tabIconDefault }]}>{session.observationCount} 条观测</Text>
         <Text style={[styles.metricText, { color: colors.tabIconDefault }]}>{session.backgroundTrackingRequested ? "已请求后台采集" : "仅前台采集"}</Text>
       </View>
+      <Pressable onPress={onOpen} style={({ pressed }) => [styles.detailLink, pressed && styles.pressed]}><Text style={styles.detailLinkText}>查看设备、位置轨迹与 RSSI 可视化</Text><MaterialIcons name="insights" size={18} color="#006C5F" /></Pressable>
       <View style={styles.cardActions}>
         <Pressable accessibilityRole="button" accessibilityLabel="导出本次扫描 JSON" onPress={onExport} style={({ pressed }) => [styles.exportButton, pressed && styles.pressed]}>
           <MaterialIcons name="ios-share" size={18} color="#006C5F" />
@@ -110,6 +113,8 @@ const styles = StyleSheet.create({
   cardSubtitle: { fontSize: 13 },
   cardMetrics: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", gap: 16, paddingTop: 12 },
   metricText: { fontSize: 12 },
+  detailLink: { alignItems: "center", flexDirection: "row", gap: 6 },
+  detailLinkText: { color: "#006C5F", fontSize: 12, fontWeight: "700" },
   cardActions: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   feedback: { alignItems: "center", borderRadius: 14, flexDirection: "row", gap: 8, marginBottom: 10, paddingHorizontal: 12, paddingVertical: 10 },
   feedbackText: { color: "#003731", flex: 1, fontSize: 12, lineHeight: 17 },

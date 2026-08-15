@@ -6,6 +6,7 @@ import {
   DEFAULT_TRACKER_PREFERENCES,
   type DeviceObservation,
   type LocationSnapshot,
+  type LocationQuality,
   type MotionSnapshot,
   type PermissionStatus,
   type ScanLifecycle,
@@ -32,6 +33,7 @@ type TrackerAction =
   | { type: "setLifecycle"; lifecycle: ScanLifecycle; error?: string | null }
   | { type: "setPermissions"; permissions: Partial<PermissionStatus> }
   | { type: "setLocation"; location: LocationSnapshot | null }
+  | { type: "setLocationQuality"; quality: LocationQuality }
   | { type: "setMotion"; motion: MotionSnapshot | null }
   | { type: "recordObservation"; observation: DeviceObservation; devices: TrackedDeviceSummary[] }
   | { type: "setPreferences"; preferences: TrackerPreferences }
@@ -50,6 +52,7 @@ const initialState: TrackerState = {
   lifecycle: "idle",
   activeSession: null,
   latestLocation: null,
+  locationQuality: "waiting",
   latestMotion: null,
   permissions: INITIAL_PERMISSIONS,
   devices: [],
@@ -59,7 +62,7 @@ const initialState: TrackerState = {
   preferences: DEFAULT_TRACKER_PREFERENCES,
 };
 
-function summarizeDevices(observations: DeviceObservation[]): TrackedDeviceSummary[] {
+export function summarizeDeviceObservations(observations: DeviceObservation[]): TrackedDeviceSummary[] {
   const grouped = new Map<string, DeviceObservation[]>();
   observations.forEach((item) => {
     const items = grouped.get(item.device.id) ?? [];
@@ -88,13 +91,15 @@ function reducer(state: TrackerState, action: TrackerAction): TrackerState {
       return {
         ...state,
         ...action.payload,
-        devices: summarizeDevices(action.payload.observations),
+        preferences: { ...DEFAULT_TRACKER_PREFERENCES, ...action.payload.preferences },
+        devices: summarizeDeviceObservations(action.payload.observations),
         hydrated: true,
       };
     case "start":
       return {
         ...state,
         lifecycle: "scanning",
+        locationQuality: "waiting",
         activeSession: action.session,
         sessions: [action.session, ...state.sessions],
         lastError: null,
@@ -114,6 +119,8 @@ function reducer(state: TrackerState, action: TrackerAction): TrackerState {
       return { ...state, permissions: { ...state.permissions, ...action.permissions } };
     case "setLocation":
       return { ...state, latestLocation: action.location };
+    case "setLocationQuality":
+      return { ...state, locationQuality: action.quality };
     case "setMotion":
       return { ...state, latestMotion: action.motion };
     case "recordObservation": {
@@ -133,7 +140,7 @@ function reducer(state: TrackerState, action: TrackerAction): TrackerState {
     case "deleteSession": {
       const sessions = state.sessions.filter((session) => session.id !== action.sessionId);
       const observations = state.observations.filter((observation) => observation.sessionId !== action.sessionId);
-      return { ...state, sessions, observations, devices: summarizeDevices(observations) };
+      return { ...state, sessions, observations, devices: summarizeDeviceObservations(observations) };
     }
     case "clear":
       return { ...initialState, hydrated: true };
@@ -151,6 +158,7 @@ interface TrackerContextValue {
   setLifecycle: (lifecycle: ScanLifecycle, error?: string | null) => void;
   setPermissions: (permissions: Partial<PermissionStatus>) => void;
   setLatestLocation: (location: LocationSnapshot | null) => void;
+  setLocationQuality: (quality: LocationQuality) => void;
   setLatestMotion: (motion: MotionSnapshot | null) => void;
   recordObservation: (observation: Omit<DeviceObservation, "id" | "sessionId">) => void;
   setPreferences: (preferences: TrackerPreferences) => void;
@@ -164,10 +172,12 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const activeSessionRef = useRef<ScanSession | null>(null);
   const observationsRef = useRef<DeviceObservation[]>([]);
+  const preferencesRef = useRef<TrackerPreferences>(DEFAULT_TRACKER_PREFERENCES);
 
   useEffect(() => {
     activeSessionRef.current = state.activeSession;
     observationsRef.current = state.observations;
+    preferencesRef.current = state.preferences;
   }, [state.activeSession, state.observations]);
 
   useEffect(() => {
@@ -211,6 +221,8 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   const recordObservation = useCallback((observation: Omit<DeviceObservation, "id" | "sessionId">) => {
     const activeSession = activeSessionRef.current;
     if (!activeSession) return;
+    const sessionRecords = observationsRef.current.filter((item) => item.sessionId === activeSession.id).length;
+    if (sessionRecords >= preferencesRef.current.maxRecordsPerSession) return;
     const complete: DeviceObservation = {
       ...observation,
       id: createId("observation"),
@@ -218,7 +230,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     };
     const allObservations = [...observationsRef.current, complete];
     observationsRef.current = allObservations;
-    dispatch({ type: "recordObservation", observation: complete, devices: summarizeDevices(allObservations) });
+    dispatch({ type: "recordObservation", observation: complete, devices: summarizeDeviceObservations(allObservations) });
   }, []);
 
   const value = useMemo<TrackerContextValue>(
@@ -229,6 +241,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
       setLifecycle: (lifecycle, error) => dispatch({ type: "setLifecycle", lifecycle, error }),
       setPermissions: (permissions) => dispatch({ type: "setPermissions", permissions }),
       setLatestLocation: (location) => dispatch({ type: "setLocation", location }),
+      setLocationQuality: (quality) => dispatch({ type: "setLocationQuality", quality }),
       setLatestMotion: (motion) => dispatch({ type: "setMotion", motion }),
       recordObservation,
       setPreferences: (preferences) => dispatch({ type: "setPreferences", preferences }),

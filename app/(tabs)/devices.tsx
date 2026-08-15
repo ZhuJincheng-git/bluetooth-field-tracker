@@ -7,7 +7,7 @@ import { ScreenTitle, StatusPill } from "@/components/tracker/ui";
 import { useColors } from "@/hooks/use-colors";
 import { distanceBandLabel, rssiLabel } from "@/lib/tracker/format";
 import { relativePositionLabel } from "@/lib/tracker/estimation";
-import { useTracker } from "@/lib/tracker/TrackerProvider";
+import { summarizeDeviceObservations, useTracker } from "@/lib/tracker/TrackerProvider";
 import type { TrackedDeviceSummary } from "@/lib/tracker/types";
 
 function deviceName(device: TrackedDeviceSummary): string {
@@ -17,24 +17,26 @@ function deviceName(device: TrackedDeviceSummary): string {
 export default function DevicesScreen() {
   const colors = useColors();
   const { state } = useTracker();
+  const activeSessionId = state.activeSession?.id;
+  const devices = activeSessionId ? summarizeDeviceObservations(state.observations.filter((item) => item.sessionId === activeSessionId)) : [];
 
   return (
     <ScreenContainer className="px-5" safeAreaClassName="pt-3">
       <ScreenTitle
         title="设备"
-        subtitle={state.devices.length ? `已发现 ${state.devices.length} 台设备` : "开始采集后会显示附近设备"}
+        subtitle={activeSessionId ? (devices.length ? `本次扫描已发现 ${devices.length} 台设备` : "本次扫描尚未发现设备") : "启动新扫描后显示本次会话的设备"}
         action={<StatusPill active={state.lifecycle === "scanning"} label={state.lifecycle === "scanning" ? "采集中" : "未采集"} />}
       />
       <FlatList
-        data={state.devices}
-        contentContainerStyle={state.devices.length ? styles.list : styles.emptyList}
+        data={devices}
+        contentContainerStyle={devices.length ? styles.list : styles.emptyList}
         keyExtractor={(item) => item.device.id}
-        renderItem={({ item }) => <DeviceRow item={item} />}
+        renderItem={({ item }) => <DeviceRow item={item} sessionId={activeSessionId} />}
         ListEmptyComponent={
           <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <MaterialIcons name="bluetooth-searching" size={38} color="#006C5F" />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>尚未发现设备</Text>
-            <Text style={[styles.emptyBody, { color: colors.tabIconDefault }]}>返回“采集”页启动一次扫描。已记录的设备会按最近发现时间排序。</Text>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>{activeSessionId ? "本次扫描暂无设备" : "没有进行中的扫描"}</Text>
+            <Text style={[styles.emptyBody, { color: colors.tabIconDefault }]}>{activeSessionId ? "蓝牙设备会在当前会话内持续更新；历史会话请到“历史”页查看。" : "设备页只展示当前扫描会话，开始采集后即可查看。"}</Text>
           </View>
         }
       />
@@ -42,13 +44,13 @@ export default function DevicesScreen() {
   );
 }
 
-function DeviceRow({ item }: { item: TrackedDeviceSummary }) {
+function DeviceRow({ item, sessionId }: { item: TrackedDeviceSummary; sessionId: string | undefined }) {
   const colors = useColors();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`查看 ${deviceName(item)} 详情`}
-      onPress={() => router.push({ pathname: "/device/[id]" as never, params: { id: item.device.id } } as never)}
+      onPress={() => router.push({ pathname: "/device/[id]" as never, params: { id: item.device.id, sessionId: sessionId ?? "" } } as never)}
       style={({ pressed }) => [styles.deviceRow, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && styles.pressed]}
     >
       <View style={styles.signalIcon}>

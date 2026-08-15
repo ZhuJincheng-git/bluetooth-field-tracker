@@ -14,6 +14,7 @@ export type ConfidenceLevel = "low" | "medium" | "high";
 export type DistanceBand = "near" | "medium" | "far" | "unknown";
 
 export type SpeedSource = "gps" | "coordinate" | "unknown";
+export type LocationQuality = "waiting" | "stable" | "lowAccuracy" | "outlier" | "servicesOff";
 
 export interface LocationSnapshot {
   latitude: number;
@@ -110,6 +111,12 @@ export interface TrackerPreferences {
   locationIntervalMs: number;
   locationDistanceIntervalM: number;
   requestBackgroundTracking: boolean;
+  locationAccuracyMode: "high" | "balanced";
+  maxLocationAccuracyM: number;
+  minimumRssiDbm: number;
+  onlyNamedDevices: boolean;
+  maxRecordsPerSession: number;
+  showMotionDiagnostics: boolean;
 }
 
 export const DEFAULT_TRACKER_PREFERENCES: TrackerPreferences = {
@@ -117,12 +124,19 @@ export const DEFAULT_TRACKER_PREFERENCES: TrackerPreferences = {
   locationIntervalMs: 2_000,
   locationDistanceIntervalM: 1,
   requestBackgroundTracking: true,
+  locationAccuracyMode: "high",
+  maxLocationAccuracyM: 80,
+  minimumRssiDbm: -95,
+  onlyNamedDevices: false,
+  maxRecordsPerSession: 5_000,
+  showMotionDiagnostics: true,
 };
 
 export interface TrackerSnapshot {
   lifecycle: ScanLifecycle;
   activeSession: ScanSession | null;
   latestLocation: LocationSnapshot | null;
+  locationQuality: LocationQuality;
   latestMotion: MotionSnapshot | null;
   permissions: PermissionStatus;
   devices: TrackedDeviceSummary[];

@@ -8,11 +8,12 @@ import { IconAction, MetricTile, ScreenTitle, StatusPill } from "@/components/tr
 import { useColors } from "@/hooks/use-colors";
 import { formatAccuracy, formatCoordinate, formatElapsed, formatHeading, formatLocationAge, formatSpeed, formatSpeedSource } from "@/lib/tracker/format";
 import { nativeTrackerService } from "@/lib/tracker/NativeTrackerService";
+import { locationQualityLabel } from "@/lib/tracker/location-quality";
 import { useTracker } from "@/lib/tracker/TrackerProvider";
 
 export default function ScanScreen() {
   const colors = useColors();
-  const { state, startSession, stopSession, recordObservation, setLatestLocation, setLatestMotion, setLifecycle, setPermissions } = useTracker();
+  const { state, startSession, stopSession, recordObservation, setLatestLocation, setLatestMotion, setLifecycle, setLocationQuality, setPermissions } = useTracker();
   const [now, setNow] = useState(Date.now());
   const isScanning = state.lifecycle === "scanning";
   const locationAge = state.latestLocation ? now - state.latestLocation.capturedAt : null;
@@ -36,7 +37,7 @@ export default function ScanScreen() {
         throw new Error("后台采集需要“始终允许”位置权限。请在系统设置完成授权，或在设置中关闭后台采集后重试。");
       }
       startSession();
-      await nativeTrackerService.start(state.preferences, { onLocation: setLatestLocation, onMotion: setLatestMotion, onObservation: recordObservation });
+      await nativeTrackerService.start(state.preferences, { onLocation: setLatestLocation, onLocationQuality: setLocationQuality, onMotion: setLatestMotion, onObservation: recordObservation });
     } catch (error) {
       await nativeTrackerService.stop();
       stopSession();
@@ -60,7 +61,7 @@ export default function ScanScreen() {
           <StatusPill active={isScanning} label={isScanning ? "正在采集" : "准备就绪"} />
         </View>
         <Text style={[styles.heroTitle, { color: colors.text }]}>{isScanning ? formatElapsed(state.activeSession?.startedAt ?? now, now) : "开始一次采集"}</Text>
-        <Text style={[styles.heroBody, { color: colors.tabIconDefault }]}>{isScanning ? (hasFreshLocation ? "蓝牙与位置数据正在独立更新；坐标状态卡会显示最近一次定位时间。" : "蓝牙已开始采集，正在等待第一条位置更新。请确认系统定位服务已经开启。") : state.lastError ?? "开始后将先检查蓝牙、位置和通知权限，再创建本机扫描会话。"}</Text>
+        <Text style={[styles.heroBody, { color: colors.tabIconDefault }]}>{isScanning ? (state.locationQuality === "servicesOff" ? "系统定位服务未开启；蓝牙会继续采集，但观测不会附带坐标。" : hasFreshLocation ? "蓝牙与位置数据正在独立更新；异常或低精度位置会被自动过滤。" : "蓝牙已开始采集，正在等待符合精度要求的首个位置更新。") : state.lastError ?? "开始后将先检查蓝牙、位置和通知权限，再创建本机扫描会话。"}</Text>
         <Pressable onPress={() => void (isScanning ? handleStop() : handleStart())} accessibilityRole="button" accessibilityLabel={isScanning ? "停止采集" : "开始采集"} style={({ pressed }) => [styles.primaryButton, { backgroundColor: isScanning ? "#C2382B" : "#006C5F" }, pressed && styles.buttonPressed]}>
           <MaterialIcons name={isScanning ? "stop-circle" : "play-circle"} size={22} color="#FFFFFF" />
           <Text style={styles.primaryButtonText}>{isScanning ? "停止采集" : "开始采集"}</Text>
@@ -69,17 +70,17 @@ export default function ScanScreen() {
       <View style={[styles.locationCard, { backgroundColor: colors.surface, borderColor: hasFreshLocation ? "#A4F2DF" : colors.border }]}>
         <View style={styles.locationHeader}>
           <View style={styles.locationLabel}><MaterialIcons name="my-location" size={19} color="#006C5F" /><Text style={[styles.locationTitle, { color: colors.text }]}>实时位置</Text></View>
-          <View style={[styles.locationLive, { backgroundColor: hasFreshLocation ? "#E1F5ED" : "#EDF0EE" }]}><View style={[styles.locationDot, { backgroundColor: hasFreshLocation ? "#006C5F" : colors.tabIconDefault }]} /><Text style={[styles.locationLiveText, { color: hasFreshLocation ? "#003731" : colors.tabIconDefault }]}>{formatLocationAge(state.latestLocation?.capturedAt ?? null, now)}</Text></View>
+          <View style={[styles.locationLive, { backgroundColor: hasFreshLocation && state.locationQuality === "stable" ? "#E1F5ED" : "#EDF0EE" }]}><View style={[styles.locationDot, { backgroundColor: hasFreshLocation && state.locationQuality === "stable" ? "#006C5F" : colors.tabIconDefault }]} /><Text style={[styles.locationLiveText, { color: hasFreshLocation && state.locationQuality === "stable" ? "#003731" : colors.tabIconDefault }]}>{state.locationQuality === "stable" ? formatLocationAge(state.latestLocation?.capturedAt ?? null, now) : locationQualityLabel(state.locationQuality)}</Text></View>
         </View>
         <Text style={[styles.coordinate, { color: state.latestLocation ? colors.text : colors.tabIconDefault }]}>{formatCoordinate(state.latestLocation)}</Text>
-        <Text style={[styles.locationMeta, { color: colors.tabIconDefault }]}>{formatAccuracy(state.latestLocation?.accuracyM ?? null)} · 每 {state.preferences.locationIntervalMs / 1000} 秒或移动 {state.preferences.locationDistanceIntervalM} m 更新</Text>
+        <Text style={[styles.locationMeta, { color: colors.tabIconDefault }]}>{formatAccuracy(state.latestLocation?.accuracyM ?? null)} · 最大容许 ±{state.preferences.maxLocationAccuracyM} m · 每 {state.preferences.locationIntervalMs / 1000} 秒或移动 {state.preferences.locationDistanceIntervalM} m 更新</Text>
       </View>
       <View style={styles.metrics}>
         <MetricTile icon="speed" label="移动速度" value={formatSpeed(state.latestLocation?.speedMps ?? null)} />
         <MetricTile icon="explore" label="手机朝向" value={formatHeading(state.latestMotion?.phoneHeadingDegrees ?? null)} />
       </View>
       <Text style={[styles.speedSourceHint, { color: colors.tabIconDefault }]}>移动速度来源：{formatSpeedSource(state.latestLocation?.speedSource)}。优先使用系统 GPS；GPS 未给出有效速度且坐标移动至少 1 m 时，以位移/时间补全。</Text>
-      <Text style={[styles.motionHint, { color: colors.tabIconDefault }]}>行进航向：{formatHeading(state.latestLocation?.headingDegrees ?? null)} · 朝向传感器：{state.latestMotion?.headingSource === "magnetometer" ? "罗盘" : state.latestMotion?.headingSource === "location" ? "定位航向" : "等待"} · 运动强度：{state.latestMotion?.movementIntensityMps2 == null ? "等待" : `${state.latestMotion.movementIntensityMps2.toFixed(1)} m/s²`}（运动强度不是速度）</Text>
+      {state.preferences.showMotionDiagnostics ? <Text style={[styles.motionHint, { color: colors.tabIconDefault }]}>行进航向：{formatHeading(state.latestLocation?.headingDegrees ?? null)} · 朝向传感器：{state.latestMotion?.headingSource === "magnetometer" ? "罗盘" : state.latestMotion?.headingSource === "location" ? "定位航向" : "等待"} · 运动强度：{state.latestMotion?.movementIntensityMps2 == null ? "等待" : `${state.latestMotion.movementIntensityMps2.toFixed(1)} m/s²`}（运动强度不是速度）</Text> : null}
       <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>最近发现</Text><Pressable onPress={() => router.push("/(tabs)/devices" as never)} style={({ pressed }) => pressed && styles.buttonPressed}><Text style={styles.allLink}>查看全部</Text></Pressable></View>
       {state.devices.length ? (
         <View style={[styles.latestDevice, { backgroundColor: colors.surface, borderColor: colors.border }]}>

@@ -7,14 +7,14 @@ import { IconAction, ScreenTitle, StatusPill } from "@/components/tracker/ui";
 import { useColors } from "@/hooks/use-colors";
 import { formatCoordinate, formatHeading, rssiLabel } from "@/lib/tracker/format";
 import { relativePositionLabel } from "@/lib/tracker/estimation";
-import { useTracker } from "@/lib/tracker/TrackerProvider";
+import { summarizeDeviceObservations, useTracker } from "@/lib/tracker/TrackerProvider";
 
 export default function DeviceDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, sessionId } = useLocalSearchParams<{ id: string; sessionId?: string }>();
   const colors = useColors();
   const { state } = useTracker();
-  const observations = state.observations.filter((item) => item.device.id === id).sort((a, b) => b.observedAt - a.observedAt);
-  const device = state.devices.find((item) => item.device.id === id);
+  const observations = state.observations.filter((item) => item.device.id === id && (!sessionId || item.sessionId === sessionId)).sort((a, b) => b.observedAt - a.observedAt);
+  const device = summarizeDeviceObservations(observations).find((item) => item.device.id === id);
   const label = device?.device.name ?? device?.device.localName ?? "BLE 设备";
   const estimate = device?.estimate;
   const signalBearing = device?.signalBearing;

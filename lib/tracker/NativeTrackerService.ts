@@ -6,6 +6,7 @@ import { BleManager, State, type Device } from "react-native-ble-plx";
 import { PermissionsAndroid, Platform } from "react-native";
 
 import { BACKGROUND_LOCATION_TASK, toSnapshot } from "@/lib/tracker/background-location-task";
+import { assessLocationQuality } from "@/lib/tracker/location-quality";
 import type { BluetoothDeviceIdentity, DeviceObservation, LocationSnapshot, MotionSnapshot, PermissionStatus, TrackerPreferences } from "@/lib/tracker/types";
 
 const delay = (durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs));
@@ -40,6 +41,7 @@ function backgroundError(error: unknown): Error {
 
 export interface NativeTrackerCallbacks {
   onLocation: (location: LocationSnapshot) => void;
+  onLocationQuality: (quality: import("@/lib/tracker/types").LocationQuality) => void;
   onMotion: (motion: MotionSnapshot) => void;
   onObservation: (observation: Omit<DeviceObservation, "id" | "sessionId">) => void;
 }
@@ -108,9 +110,17 @@ export class NativeTrackerService {
         });
       }
 
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) callbacks.onLocationQuality("servicesOff");
+      const locationAccuracy = preferences.locationAccuracyMode === "high" ? Location.Accuracy.High : Location.Accuracy.Balanced;
       const updateLocation = (location: Location.LocationObject) => {
         const next = toSnapshot(location);
         const previous = this.latestLocation;
+        const quality = assessLocationQuality(previous, next, preferences.maxLocationAccuracyM);
+        if (quality !== "stable") {
+          callbacks.onLocationQuality(quality);
+          return;
+        }
         if (previous) {
           const elapsedSeconds = Math.max(0.001, (next.capturedAt - previous.capturedAt) / 1_000);
           const latitudeDelta = (next.latitude - previous.latitude) * 111_320;
@@ -129,22 +139,24 @@ export class NativeTrackerService {
         }
         this.latestLocation = next;
         callbacks.onLocation(next);
+        callbacks.onLocationQuality("stable");
       };
 
-      const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 120_000, requiredAccuracy: 100 });
+      const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 30_000, requiredAccuracy: preferences.maxLocationAccuracyM });
       if (lastKnown) updateLocation(lastKnown);
-      void Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: false })
+      void Location.getCurrentPositionAsync({ accuracy: locationAccuracy, mayShowUserSettingsDialog: false })
         .then(updateLocation)
         .catch(() => undefined);
 
       this.locationSubscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: preferences.locationIntervalMs,
+          accuracy: locationAccuracy,
+          timeInterval: Math.max(1_000, preferences.locationIntervalMs),
           distanceInterval: preferences.locationDistanceIntervalM,
           mayShowUserSettingsDialog: false,
         },
         updateLocation,
+        () => callbacks.onLocationQuality("servicesOff"),
       );
 
       this.headingSubscription = await Location.watchHeadingAsync((heading) => {
@@ -183,7 +195,7 @@ export class NativeTrackerService {
         const hasStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
         if (!hasStarted) {
           await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-            accuracy: Location.Accuracy.Balanced,
+            accuracy: locationAccuracy,
             timeInterval: preferences.locationIntervalMs,
             distanceInterval: preferences.locationDistanceIntervalM,
             foregroundService: {
@@ -208,6 +220,8 @@ export class NativeTrackerService {
           return;
         }
         if (!device || !this.isScanning) return;
+        if (preferences.onlyNamedDevices && !device.name && !device.localName) return;
+        if (device.rssi != null && device.rssi < preferences.minimumRssiDbm) return;
         const previous = this.lastRecordedAtByDevice.get(device.id) ?? 0;
         if (Date.now() - previous < preferences.observationThrottleMs) return;
         this.lastRecordedAtByDevice.set(device.id, Date.now());
