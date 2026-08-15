@@ -25,6 +25,10 @@ export interface TrackerState extends PersistedTrackerState, TrackerSnapshot {
 }
 
 export type TrackerAction =
+  /**
+   * Action 是状态变化的唯一入口。页面和原生回调不应直接改 state，
+   * 因为集中入口才能在测试中验证一次动作影响了哪些字段。
+   */
   | { type: "hydrate"; payload: PersistedTrackerState }
   | { type: "start"; session: ScanSession }
   | { type: "stop"; stoppedAt: number }
@@ -46,6 +50,7 @@ const INITIAL_PERMISSIONS: PermissionStatus = {
 };
 
 export function createInitialTrackerState(): TrackerState {
+  // 这个函数而非共享对象字面量，避免 reset 后意外复用可变对象引用。
   return {
     hydrated: false,
     lifecycle: "idle",
@@ -63,8 +68,11 @@ export function createInitialTrackerState(): TrackerState {
 }
 
 export function trackerReducer(state: TrackerState, action: TrackerAction): TrackerState {
+  // Reducer 必须保持纯净：不能在这里请求权限、写 AsyncStorage 或调用 BLE。
+  // 这样相同输入永远产生相同输出，适合用单元测试覆盖。
   switch (action.type) {
     case "hydrate": {
+      // 合并默认值是简易迁移策略：旧版本没有的新偏好会自然得到安全默认值。
       const preferences = { ...DEFAULT_TRACKER_PREFERENCES, ...action.payload.preferences };
       return {
         ...state,
@@ -100,6 +108,7 @@ export function trackerReducer(state: TrackerState, action: TrackerAction): Trac
     case "setMotion":
       return { ...state, latestMotion: action.motion };
     case "recordObservation": {
+      // 先更新“事实表”，再由同一份 observations 推导摘要，避免计数和列表不一致。
       const observations = [...state.observations, action.observation];
       const sessions = state.sessions.map((session) =>
         session.id === action.observation.sessionId ? { ...session, observationCount: session.observationCount + 1 } : session,
@@ -112,6 +121,7 @@ export function trackerReducer(state: TrackerState, action: TrackerAction): Trac
     case "setPreferences":
       return { ...state, preferences: action.preferences };
     case "deleteSession": {
+      // 会话是观测的所有者。删除会话必须级联删除该会话的观测，但绝不能影响其他会话。
       const sessions = state.sessions.filter((session) => session.id !== action.sessionId);
       const observations = state.observations.filter((observation) => observation.sessionId !== action.sessionId);
       return { ...state, sessions, observations, devices: summarizeDeviceObservations(observations) };

@@ -50,7 +50,9 @@ const TrackerContext = createContext<TrackerContextValue | null>(null);
  * 领域规则位于 `state.ts` / `selectors.ts`；这里不实现估算、汇总或业务决策。
  */
 export function TrackerProvider({ children }: { children: React.ReactNode }) {
+  // reducer 管数据一致性；Provider 只解决“React 如何订阅”和“如何把数据持久化”。
   const [state, dispatch] = useReducer(trackerReducer, undefined, createInitialTrackerState);
+  // 原生回调可能在 React 下一次渲染前到达。ref 保存最新事实，避免闭包读到旧会话或旧偏好。
   const activeSessionRef = useRef<ScanSession | null>(null);
   const observationsRef = useRef<DeviceObservation[]>([]);
   const preferencesRef = useRef<TrackerPreferences>(DEFAULT_TRACKER_PREFERENCES);
@@ -62,6 +64,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   }, [state.activeSession, state.observations, state.preferences]);
 
   useEffect(() => {
+    // 启动时只恢复可持久化部分；权限、当前位置和运行中扫描都不能假装恢复。
     void loadTrackerState<PersistedTrackerState>().then((stored) => {
       dispatch({
         type: "hydrate",
@@ -71,6 +74,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // 状态稳定后再保存，避免 hydrate 之前把空初始状态覆盖用户原有记录。
     if (!state.hydrated) return;
     const payload: PersistedTrackerState = {
       sessions: state.sessions,
@@ -100,6 +104,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const recordObservation = useCallback((observation: Omit<DeviceObservation, "id" | "sessionId">) => {
+    // sessionId 与 id 由应用层统一生成，原生服务只负责提供尚未归属的传感器事实。
     const activeSession = activeSessionRef.current;
     if (!activeSession) return;
     const sessionRecordCount = observationsRef.current.filter((item) => item.sessionId === activeSession.id).length;

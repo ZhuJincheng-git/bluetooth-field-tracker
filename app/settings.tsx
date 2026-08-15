@@ -9,6 +9,7 @@ import { useTracker } from "@/lib/tracker/TrackerProvider";
 import type { TrackerPreferences } from "@/lib/tracker/types";
 
 const LOCATION_PROFILES = [
+  // 这是“预设值表”，而不是业务逻辑。新增档位只需追加一条数据，ChoiceRow 会自动渲染。
   { label: "实时", interval: 1_000, distance: 1 },
   { label: "均衡", interval: 2_000, distance: 1 },
   { label: "省电", interval: 5_000, distance: 3 },
@@ -16,6 +17,7 @@ const LOCATION_PROFILES = [
 ] as const;
 
 export default function SettingsScreen() {
+  // 设置页面不拥有偏好状态；它只把“用户想改哪一项”表达为一个 patch，交给 Provider 合并和持久化。
   const colors = useColors();
   const { state, setPreferences } = useTracker();
   const update = (patch: Partial<TrackerPreferences>) => setPreferences({ ...state.preferences, ...patch });
@@ -60,6 +62,7 @@ function SettingRow({ icon, title, description, control }: { icon: React.Compone
 }
 
 function ChoiceRow({ label, value, options, selected, onSelect }: { label: string; value: string; options: { label: string; value: string }[]; selected: string; onSelect: (value: string) => void }) {
+  // 可复用的“标签 + 当前值 + 选项芯片”组件。它不知道任何 BLE 或定位规则，因此可安全复用。
   const colors = useColors();
   return <View style={styles.choiceRow}><View style={styles.choiceHeader}><Text style={[styles.choiceLabel, { color: colors.text }]}>{label}</Text><Text style={[styles.choiceValue, { color: colors.tabIconDefault }]}>{value}</Text></View><View style={styles.chips}>{options.map((option) => <Pressable key={option.value} onPress={() => onSelect(option.value)} style={({ pressed }) => [styles.chip, { backgroundColor: selected === option.value ? "#A4F2DF" : colors.background, borderColor: selected === option.value ? "#006C5F" : colors.border }, pressed && styles.pressed]}><Text style={[styles.chipText, { color: selected === option.value ? "#003731" : colors.tabIconDefault }]}>{option.label}</Text></Pressable>)}</View></View>;
 }

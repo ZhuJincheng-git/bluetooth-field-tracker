@@ -12,6 +12,7 @@ import { trackingController } from "@/lib/tracker/runtime";
 import { useTracker } from "@/lib/tracker/TrackerProvider";
 
 export default function ScanScreen() {
+  // 页面负责“呈现”和“表达用户意图”；权限、会话和原生订阅由 TrackingController 处理。
   const colors = useColors();
   const tracker = useTracker();
   const { state } = tracker;
@@ -21,12 +22,14 @@ export default function ScanScreen() {
   const hasFreshLocation = locationAge != null && locationAge <= Math.max(state.preferences.locationIntervalMs * 2, 20_000);
 
   useEffect(() => {
+    // 这个定时器只刷新 UI 中的“多久前更新”，不会重新启动任何传感器。
     if (!isScanning) return;
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, [isScanning]);
 
   useEffect(() => {
+    // 运行期可安全更新的偏好（如 RSSI 过滤）交给控制器转发；重建订阅的偏好在下一场扫描生效。
     if (isScanning) trackingController.applyRuntimePreferences(state.preferences);
   }, [isScanning, state.preferences]);
 

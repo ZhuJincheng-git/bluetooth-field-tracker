@@ -3,6 +3,7 @@ import type { DeviceObservation, DirectionEstimate, DistanceBand, RelativePositi
 const EARTH_RADIUS_M = 6_371_000;
 
 function median(values: number[]): number | null {
+  // 中位数比平均值更不容易被一两个离群 GPS 精度值拉偏。
   if (!values.length) return null;
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
@@ -13,6 +14,7 @@ function distanceMeters(
   left: NonNullable<DeviceObservation["location"]>,
   right: NonNullable<DeviceObservation["location"]>,
 ): number {
+  // Haversine 公式：把经纬度转换为球面上的两点距离，适合这里的短距离移动判断。
   const toRadians = (value: number) => (value * Math.PI) / 180;
   const latitudeDelta = toRadians(right.latitude - left.latitude);
   const longitudeDelta = toRadians(right.longitude - left.longitude);
@@ -33,6 +35,7 @@ function normalizeDegrees(value: number): number {
 }
 
 function coverageDegrees(angles: number[]): number {
+  // 最大“未覆盖扇区”越小，说明用户转动手机覆盖的方向越完整。
   if (angles.length < 2) return 0;
   const sorted = angles.map(normalizeDegrees).sort((left, right) => left - right);
   const gaps = sorted.map((angle, index) => normalizeDegrees(sorted[(index + 1) % sorted.length] - angle));
@@ -40,6 +43,8 @@ function coverageDegrees(angles: number[]): number {
 }
 
 function circularWeightedMean(samples: Array<{ angle: number; weight: number }>): number {
+  // 角度不能直接求平均：359° 和 1° 的平均应接近 0°，而不是 180°。
+  // 所以先转成单位圆向量，相加后再用 atan2 还原角度。
   const vector = samples.reduce((current, sample) => {
     const radians = (sample.angle * Math.PI) / 180;
     return { x: current.x + Math.cos(radians) * sample.weight, y: current.y + Math.sin(radians) * sample.weight };
@@ -104,6 +109,7 @@ export function estimateDirection(observations: DeviceObservation[]): DirectionE
  * 这是用于“指向性扫描”的粗略扇区法，绝不等同于设备坐标或精确距离。
  */
 export function estimateSignalBearing(observations: DeviceObservation[]): SignalBearingEstimate {
+  // 只看最近 45 秒，避免很早以前手机朝向造成“历史残影”。
   const newestTimestamp = Math.max(...observations.map((item) => item.observedAt), 0);
   const ordered = observations
     .filter((item) => item.observedAt >= newestTimestamp - 45_000)
@@ -124,6 +130,7 @@ export function estimateSignalBearing(observations: DeviceObservation[]): Signal
   }
 
   const minRssi = Math.min(...samples.map((sample) => sample.rssi));
+  // RSSI 越强，权重越高；加 1 可保证最弱样本仍作为方向覆盖的微小证据。
   const peakBearing = circularWeightedMean(samples.map((sample) => ({ angle: sample.heading, weight: sample.rssi - minRssi + 1 })));
   const currentHeading = samples.at(-1)!.heading;
   const relativeBearing = normalizeDegrees(peakBearing - currentHeading);

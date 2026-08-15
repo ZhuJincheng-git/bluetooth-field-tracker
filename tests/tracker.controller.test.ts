@@ -23,6 +23,8 @@ function commands(): TrackerCommandPort {
 }
 
 function native(overrides: Partial<NativeTrackingPort> = {}): NativeTrackingPort {
+  // 这不是 mock 某个实现细节，而是一个实现了端口契约的“假 Android 层”。
+  // 因此控制器测试不需要蓝牙硬件或 React Native 运行时。
   return {
     requestRequiredPermissions: vi.fn(async () => grantedPermissions()),
     start: vi.fn(async () => undefined),

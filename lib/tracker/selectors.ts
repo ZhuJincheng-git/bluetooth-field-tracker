@@ -8,10 +8,12 @@ import type { DeviceObservation, ScanSession, TrackedDeviceSummary } from "./typ
  * 因而可被 Provider、路由页面和测试共享。
  */
 export function observationsForSession(observations: DeviceObservation[], sessionId: string): DeviceObservation[] {
+  // UI 不自己散落 filter 逻辑；把查询放在这里，便于复用和测试。
   return observations.filter((observation) => observation.sessionId === sessionId);
 }
 
 export function summarizeDeviceObservations(observations: DeviceObservation[]): TrackedDeviceSummary[] {
+  // Map 的 key 是 Android BLE 提供的设备标识；每个 value 是同一设备的时间序列。
   const grouped = new Map<string, DeviceObservation[]>();
   for (const observation of observations) {
     const entries = grouped.get(observation.device.id) ?? [];

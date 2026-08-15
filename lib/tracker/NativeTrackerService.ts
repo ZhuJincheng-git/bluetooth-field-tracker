@@ -41,6 +41,7 @@ function backgroundError(error: unknown): Error {
 }
 
 export class NativeTrackerService {
+  // 这些字段是“运行时资源句柄”。它们绝不能保存到 AsyncStorage，stop() 时必须逐一释放。
   private bleManager: BleManager | null = null;
   private latestLocation: LocationSnapshot | null = null;
   private latestMotion: MotionSnapshot | null = null;
@@ -61,6 +62,7 @@ export class NativeTrackerService {
   }
 
   async requestRequiredPermissions(requestBackgroundTracking: boolean): Promise<PermissionStatus> {
+    // 浏览器没有 Android BLE/定位权限模型，因此明确返回拒绝而不是伪造成功。
     if (Platform.OS !== "android") {
       return { bluetooth: "denied", locationForeground: "denied", locationBackground: "denied", notifications: "denied" };
     }
@@ -96,6 +98,8 @@ export class NativeTrackerService {
   }
 
   async start(preferences: TrackerPreferences, callbacks: NativeTrackerCallbacks): Promise<void> {
+    // start() 按资源依赖顺序初始化：前台服务 → 位置 → 传感器 → 后台位置 → BLE。
+    // 任意一步失败都会落入 catch，并由 stop() 清理此前已成功创建的资源。
     if (Platform.OS !== "android") {
       throw new Error("BLE 连续扫描仅支持 Android 开发构建或发布构建。浏览器预览不具备蓝牙扫描能力。");
     }
@@ -118,6 +122,7 @@ export class NativeTrackerService {
       if (!servicesEnabled) callbacks.onLocationQuality("servicesOff");
       const locationAccuracy = preferences.locationAccuracyMode === "high" ? Location.Accuracy.High : Location.Accuracy.Balanced;
       const updateLocation = (location: Location.LocationObject) => {
+        // Android 返回的是原始坐标；质量模块决定是否应发布，服务层负责补全速度和航向。
         const next = toSnapshot(location);
         const previous = this.latestLocation;
         const quality = assessLocationQuality(previous, next, (this.activePreferences ?? preferences).maxLocationAccuracyM);
@@ -164,6 +169,7 @@ export class NativeTrackerService {
       );
 
       this.headingSubscription = await Location.watchHeadingAsync((heading) => {
+        // GPS 行进航向与“手机指向哪里”不同。这里优先保留系统提供的设备朝向。
         const phoneHeadingDegrees = heading.trueHeading >= 0 ? heading.trueHeading : heading.magHeading;
         this.latestMotion = { ...this.latestMotion, phoneHeadingDegrees, headingSource: "location", movementIntensityMps2: this.latestMotion?.movementIntensityMps2 ?? null, magneticFieldUt: this.latestMotion?.magneticFieldUt ?? null, capturedAt: Date.now() };
         callbacks.onMotion(this.latestMotion);
@@ -180,6 +186,7 @@ export class NativeTrackerService {
       }
 
       if (await Magnetometer.isAvailableAsync()) {
+        // 磁力计刷新更快，适合转动手机时做 RSSI 扇区扫描；数值仍会受磁场干扰。
         Magnetometer.setUpdateInterval(200);
         this.magnetometerSubscription = Magnetometer.addListener((field) => {
           const magneticFieldUt = Math.hypot(field.x, field.y, field.z);
@@ -219,6 +226,7 @@ export class NativeTrackerService {
 
       this.isScanning = true;
       await this.bleManager.startDeviceScan(null, { allowDuplicates: true }, (error, device) => {
+        // 原生回调可能高频到达。先按名称、RSSI 和时间节流，再写入持久化观察。
         if (error) {
           this.isScanning = false;
           return;
@@ -246,6 +254,7 @@ export class NativeTrackerService {
   }
 
   async stop(): Promise<void> {
+    // stop 必须幂等：无论 start 在第几步失败，都可安全调用来释放已经拿到的资源。
     this.isScanning = false;
     this.lastRecordedAtByDevice.clear();
     await this.bleManager?.stopDeviceScan();

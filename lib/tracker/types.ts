@@ -47,6 +47,10 @@ export interface BluetoothDeviceIdentity {
 }
 
 export interface DeviceObservation {
+  /**
+   * 一条“事实记录”，而不是设备的最终状态。
+   * 同一设备会在一场扫描中产生很多观察，详情页与估算函数再从这些事实推导趋势。
+   */
   id: string;
   sessionId: string;
   device: BluetoothDeviceIdentity;
@@ -107,6 +111,10 @@ export interface PermissionStatus {
 }
 
 export interface TrackerPreferences {
+  /**
+   * 偏好是用户可配置的“策略”，不是一次扫描的事实数据。
+   * 保存默认值能让旧版本导出的记录在新增设置项后继续正常 hydrate。
+   */
   observationThrottleMs: number;
   locationIntervalMs: number;
   locationDistanceIntervalM: number;
